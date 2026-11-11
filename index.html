@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SimScale Workbench // EVA-SUIT-REV4 Live Biometric Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-viewport: #0c0e12; --bg-header: #111318; --bg-panel: #181a20; --bg-panel-alt: #1f2229;
+      --bg-input: #12141a; --bg-hover: rgba(255, 255, 255, 0.045);
+      --border-main: #262932; --border-panel: #2a2e39; --border-focus: #1d70f5;
+      --sim-blue: #1d70f5; --sim-blue-hover: #3682ff; --sim-blue-glow: rgba(29, 112, 245, 0.25);
+      --status-nominal: #10b981; --status-warning: #f59e0b; --status-critical: #ef4444; --status-idle: #4b5263;
+      --text-primary: #eef2f6; --text-secondary: #9aa4b2; --text-muted: #697586;
+      --radius-sm: 3px; --radius-md: 4px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-font-smoothing: antialiased; }
+    body, html {
+      width: 100vw; height: 100vh; overflow: hidden;
+      background: var(--bg-viewport); color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11.5px;
+    }
+    #webgl-container {
+      position: absolute; inset: 0; width: 100vw; height: 100vh; z-index: 1; cursor: grab;
+      background: radial-gradient(circle at 50% 45%, #181c26 0%, #0b0d12 100%);
+    }
+    #webgl-container:active { cursor: grabbing; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg-panel); }
+    ::-webkit-scrollbar-thumb { background: #323744; border-radius: 3px; }
+
+    .workbench-header {
+      position: fixed; top: 0; left: 0; right: 0; height: 42px;
+      background: var(--bg-header); border-bottom: 1px solid var(--border-main);
+      z-index: 40; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; gap: 12px;
+    }
+    .wb-left, .wb-center, .wb-right { display: flex; align-items: center; gap: 8px; }
+    .simscale-logo { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 12.5px; letter-spacing: -0.02em; padding-right: 6px; }
+    .simscale-cube {
+      width: 20px; height: 20px; border-radius: 3px; background: linear-gradient(135deg, #1d70f5 0%, #0b4bb8 100%);
+      display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 10px var(--sim-blue-glow);
+    }
+    .breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; }
+    .breadcrumb .sep { color: var(--text-muted); font-size: 11px; }
+    .breadcrumb .project { color: var(--text-primary); font-weight: 500; }
+    .breadcrumb .analysis-badge {
+      background: var(--bg-panel-alt); border: 1px solid var(--border-panel); color: #60a5fa;
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: var(--radius-sm);
+    }
+    .ribbon-group { display: flex; align-items: center; background: var(--bg-panel); border: 1px solid var(--border-panel); border-radius: var(--radius-md); padding: 2px; gap: 2px; }
+    .ribbon-divider { width: 1px; height: 18px; background: var(--border-panel); margin: 0 2px; }
+    .tool-btn {
+      background: transparent; border: 1px solid transparent; color: var(--text-secondary); padding: 4px 8px; border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.14s ease;
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .tool-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .tool-btn.active { background: rgba(29, 112, 245, 0.16); border-color: var(--sim-blue); color: #ffffff; box-shadow: inset 0 0 8px var(--sim-blue-glow); }
+    .tool-btn svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+    .solver-badge {
+      display: flex; align-items: center; gap: 6px; background: var(--bg-panel); border: 1px solid var(--border-panel);
+      padding: 4px 9px; border-radius: var(--radius-md); font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    }
+    .status-led { width: 7px; height: 7px; border-radius: 50%; background: var(--status-nominal); box-shadow: 0 0 7px rgba(16, 185, 129, 0.7); flex-shrink: 0; }
+    .status-led.critical { background: var(--status-critical); box-shadow: 0 0 8px rgba(239, 68, 68, 0.85); }
+    .status-led.idle { background: var(--status-idle); box-shadow: none; }
+    .status-led.warn { background: var(--status-warning); box-shadow: 0 0 7px rgba(245, 158, 11, 0.7); }
+    .sim-btn-primary {
+      background: var(--sim-blue); border: 1px solid #3b82f6; color: #ffffff; padding: 5px 10px; border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .sim-btn-primary:hover { background: var(--sim-blue-hover); box-shadow: 0 0 12px var(--sim-blue-glow); }
+
+    .wb-panel {
+      position: fixed; z-index: 25; background: var(--bg-panel); border: 1px solid var(--border-panel);
+      border-radius: var(--radius-md); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65); display: flex; flex-direction: column; overflow: hidden;
+    }
+    .wb-panel-header {
+      height: 29px; padding: 0 10px; background: var(--bg-panel-alt); border-bottom: 1px solid var(--border-panel);
+      display: flex; align-items: center; justify-content: space-between; cursor: move; font-weight: 600; font-size: 11px; letter-spacing: 0.01em;
+    }
+    .wb-panel-title { display: flex; align-items: center; gap: 6px; }
+    .wb-panel-title svg { width: 12px; height: 12px; stroke: var(--sim-blue); stroke-width: 2; fill: none; }
+    .wb-panel-actions { display: flex; align-items: center; gap: 4px; }
+    .wb-icon-btn {
+      background: transparent; border: none; color: var(--text-secondary); width: 19px; height: 19px; border-radius: 3px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
+    }
+    .wb-icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .wb-panel-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: calc(100vh - 110px); }
+    .wb-panel.collapsed .wb-panel-body { display: none; }
+    .wb-panel.collapsed { height: 29px !important; min-height: 29px !important; }
+
+    .tree-section { border: 1px solid var(--border-panel); border-radius: var(--radius-sm); background: var(--bg-input); overflow: hidden; }
+    .tree-node-header {
+      padding: 5px 8px; background: rgba(255, 255, 255, 0.02); border-bottom: 1px solid var(--border-panel);
+      font-weight: 600; font-size: 10.5px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;
+      display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+    }
+    .tree-node-header:hover { color: var(--text-primary); }
+    .tree-children { display: flex; flex-direction: column; padding: 3px; gap: 1px; }
+    .tree-section.folded .tree-children { display: none; }
+    .tree-item {
+      display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; border-radius: var(--radius-sm);
+      border: 1px solid transparent; cursor: pointer; transition: background 0.1s, border-color 0.1s;
+    }
+    .tree-item:hover { background: var(--bg-hover); }
+    .tree-item.selected { background: rgba(29, 112, 245, 0.15); border-color: rgba(29, 112, 245, 0.65); }
+    .tree-item-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .tree-item-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tree-item-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tree-code { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--text-muted); }
+    .eye-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 1px 3px; border-radius: 2px; font-size: 10px; }
+    .eye-btn.active { color: var(--sim-blue); }
+
+    .view-gizmo-row { display: grid; grid-template-columns: 68px 1fr; gap: 8px; align-items: center; }
+    .axis-gizmo-box { width: 68px; height: 68px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; }
+    .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .sim-btn {
+      background: var(--bg-panel-alt); border: 1px solid var(--border-panel); color: var(--text-primary); padding: 4px 7px; border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif; font-size: 10.5px; font-weight: 500; cursor: pointer; transition: all 0.12s;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .sim-btn:hover { background: #282c37; border-color: #3a404f; }
+
+    /* ---- Big data screen (right dock) ---- */
+    #panel-inspector { width: 380px; }
+    .big-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .big-name { font-size: 13px; font-weight: 600; color: #60a5fa; }
+    .probe-badge { background: rgba(29, 112, 245, 0.2); border: 1px solid var(--sim-blue); color: #60a5fa; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 5px; border-radius: 2px; }
+    .big-readout { display: flex; align-items: baseline; gap: 8px; }
+    .big-num { font-family: 'JetBrains Mono', monospace; font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .big-unit { font-size: 13px; color: var(--text-secondary); }
+    .big-label { font-size: 10px; color: var(--text-secondary); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+    .big-state { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; }
+    #big-canvas { width: 100%; height: 130px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: var(--radius-sm); }
+    .bar-row { display: flex; flex-direction: column; gap: 3px; }
+    .bar-top { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-secondary); }
+    .bar-top b { font-family: 'JetBrains Mono', monospace; color: var(--text-primary); font-weight: 600; }
+    .bar-track { height: 8px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: 2px; overflow: hidden; }
+    .bar-fill { height: 100%; width: 0; transition: width 0.18s linear; }
+    .big-desc { font-size: 10.5px; color: var(--text-secondary); line-height: 1.4; }
+    #big-empty { font-size: 11px; color: var(--text-secondary); line-height: 1.5; padding: 4px 2px; }
+
+    /* ---- Bottom dock ---- */
+    .telemetry-5-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .cae-metric-card {
+      background: var(--bg-input); border: 1px solid var(--border-panel); border-top: 2px solid var(--status-idle);
+      border-radius: var(--radius-sm); padding: 5px 7px; display: flex; flex-direction: column; gap: 3px;
+    }
+    .cae-metric-card.nominal { border-top-color: var(--status-nominal); }
+    .cae-metric-card.warn { border-top-color: var(--status-warning); background: rgba(245, 158, 11, 0.05); }
+    .cae-metric-card.crit { border-top-color: var(--status-critical); background: rgba(239, 68, 68, 0.08); }
+    .cae-metric-top { font-size: 9.5px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.02em; }
+    .cae-metric-val { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cae-metric-unit { font-size: 9.5px; color: var(--text-muted); }
+    .mini-track { height: 4px; background: #0b0d12; border-radius: 2px; overflow: hidden; }
+    .mini-fill { height: 100%; width: 0; background: var(--sim-blue); transition: width 0.18s linear; }
+
+    input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: #2a2e39; border-radius: 2px; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 2px; background: var(--sim-blue); cursor: pointer; border: 1px solid #ffffff; }
+    #drop-overlay { position: fixed; inset: 0; background: rgba(12, 14, 18, 0.88); border: 2px dashed var(--sim-blue); z-index: 100; display: none; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; }
+    #loader-bar { position: fixed; top: 42px; left: 0; height: 2px; width: 0%; background: var(--sim-blue); z-index: 50; transition: width 0.2s, opacity 0.3s; }
+    #toast { position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 60; background: var(--bg-panel); border: 1px solid var(--status-critical); color: #fca5a5; padding: 6px 12px; border-radius: var(--radius-md); font-size: 11px; display: none; }
+    @media (max-width: 1100px) { .breadcrumb .analysis-badge { display: none; } }
+  </style>
+</head>
+<body>
+  <div id="loader-bar"></div>
+  <div id="toast"></div>
+  <div id="drop-overlay">Drop CAD / Mesh Asset (.GLB / .GLTF) to import into SimScale Workbench</div>
+
+  <header class="workbench-header">
+    <div class="wb-left">
+      <div class="simscale-logo">
+        <span class="simscale-cube">
+          <svg width="12" height="12" viewBox="0 0 24 24" stroke="#fff" stroke-width="2.3" fill="none">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+        </span>
+        <span>SimScale</span>
+      </div>
+      <div class="breadcrumb">
+        <span class="sep">/</span><span class="project">EVA-SUIT-REV4</span><span class="sep">/</span>
+        <span>Live Biometric Monitor</span>
+        <span class="analysis-badge" id="asset-label">Astronaut.glb • 2.00m</span>
+      </div>
+    </div>
+
+    <div class="wb-center">
+      <div class="ribbon-group">
+        <button class="tool-btn active" id="btn-select-mode" onclick="restoreAllParts()" title="Assemble / Pick Sub-Volume">
+          <svg viewBox="0 0 24 24"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg><span>Select Solid</span>
+        </button>
+        <button class="tool-btn" id="btn-explode-all" onclick="toggleExplodeAll()" title="Dissect All 11 Sub-Volumes">
+          <svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Explode Assembly</span>
+        </button>
+        <div class="ribbon-divider"></div>
+        <button class="tool-btn" id="btn-wireframe" onclick="toggleWireframe()" title="Toggle Surface FEA Mesh Wireframe">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span>Mesh Edges</span>
+        </button>
+        <button class="tool-btn active" id="btn-probes" onclick="toggleSensorProbes()" title="Toggle Live Sensor Probes">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg><span>Probes</span>
+        </button>
+        <div class="ribbon-divider"></div>
+        <input type="file" id="glb-input" accept=".glb,.gltf" style="display:none">
+        <button class="tool-btn" onclick="document.getElementById('glb-input').click()" title="Import local .GLB / .GLTF geometry">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Import CAD (.GLB)</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="wb-right">
+      <div class="solver-badge">
+        <span class="status-led idle" id="global-dot"></span>
+        <span>ESP32: <strong id="global-state">NOT CONNECTED</strong></span>
+        <span style="color:var(--text-muted)">|</span>
+        <span id="met-clock" style="color:var(--text-secondary)">00:00:00</span>
+      </div>
+      <button class="sim-btn-primary" id="btn-connect" onclick="connectBLE()">Connect ESP32 (Bluetooth)</button>
+      <button class="sim-btn" onclick="resetWorkspace()" title="Reset Dock Layout & Camera">Reset UI</button>
+    </div>
+  </header>
+
+  <div id="webgl-container"></div>
+
+  <!-- LEFT DOCK -->
+  <aside class="wb-panel" id="panel-subsystems" style="top: 52px; left: 12px; width: 292px;">
+    <div class="wb-panel-header" data-drag="panel-subsystems">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span>Simulation & Geometry Tree</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-subsystems')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body">
+      <div class="tree-section" id="tree-geo">
+        <div class="tree-node-header" onclick="this.parentElement.classList.toggle('folded')">
+          <span>▾ Geometry Volumes (11 Solids)</span>
+          <span style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--sim-blue);">GLTF/PBR</span>
+        </div>
+        <div class="tree-children" id="part-list"></div>
+      </div>
+      <div class="tree-section" id="tree-mesh">
+        <div class="tree-node-header" onclick="this.parentElement.classList.toggle('folded')"><span>▾ Dissection & Field Controls</span></div>
+        <div class="tree-children" style="padding:6px; gap:6px;">
+          <div style="display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-secondary);">
+            <span>Explode Vector Magnitude</span>
+            <span id="disp-val" style="font-family:'JetBrains Mono',monospace; color:var(--text-primary);">380 mm</span>
+          </div>
+          <input type="range" id="disp-slider" min="0.15" max="0.75" step="0.01" value="0.38" oninput="updateDisplacementScale(this.value)">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-top:2px;">
+            <span style="font-size:10.5px; color:var(--text-secondary);">Turntable Angular Velocity</span>
+            <input type="checkbox" id="chk-rotate" onchange="toggleAutoRotate(this.checked)">
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- RIGHT DOCK: BIG DATA SCREEN -->
+  <aside class="wb-panel" id="panel-inspector" style="top: 52px; right: 12px;">
+    <div class="wb-panel-header" data-drag="panel-inspector">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Live Sensor Screen</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-inspector')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body">
+      <div id="big-empty">Click any part of the suit (on the model or in the tree) to open its live sensor screen.</div>
+      <div id="big-main" style="display:none; flex-direction:column; gap:8px;">
+        <div class="big-title"><span class="big-name" id="big-name"></span><span class="probe-badge" id="big-code"></span></div>
+        <div class="big-label" id="big-label"></div>
+        <div class="big-readout"><span class="big-num" id="big-num">--</span><span class="big-unit" id="big-unit"></span><span class="big-state" id="big-state"></span></div>
+        <canvas id="big-canvas" width="720" height="260"></canvas>
+        <div id="big-bars" style="display:flex; flex-direction:column; gap:7px;"></div>
+        <div class="big-desc" id="big-desc"></div>
+        <button class="sim-btn" onclick="restoreAllParts()">Restore Sub-Volume to Origin</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- RIGHT DOCK: CAMERA -->
+  <aside class="wb-panel" id="panel-camera" style="top: 560px; right: 12px; width: 274px;">
+    <div class="wb-panel-header" data-drag="panel-camera">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        <span>CAD View Cube & Camera</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-camera')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body">
+      <div class="view-gizmo-row">
+        <div class="axis-gizmo-box">
+          <svg width="56" height="56" viewBox="0 0 64 64">
+            <line x1="32" y1="36" x2="32" y2="10" stroke="#10b981" stroke-width="2.2"/><circle cx="32" cy="10" r="3.5" fill="#10b981"/>
+            <text x="36" y="13" fill="#10b981" font-family="JetBrains Mono" font-size="9" font-weight="600">+Y</text>
+            <line x1="32" y1="36" x2="54" y2="46" stroke="#ef4444" stroke-width="2.2"/><circle cx="54" cy="46" r="3.5" fill="#ef4444"/>
+            <text x="46" y="57" fill="#ef4444" font-family="JetBrains Mono" font-size="9" font-weight="600">+X</text>
+            <line x1="32" y1="36" x2="12" y2="48" stroke="#3b82f6" stroke-width="2.2"/><circle cx="12" cy="48" r="3.5" fill="#3b82f6"/>
+            <text x="4" y="42" fill="#3b82f6" font-family="JetBrains Mono" font-size="9" font-weight="600">+Z</text>
+            <circle cx="32" cy="36" r="3" fill="#eef2f6"/>
+          </svg>
+        </div>
+        <div class="preset-grid">
+          <button class="sim-btn" onclick="setCameraView('anterior')">Front (+Z)</button>
+          <button class="sim-btn" onclick="setCameraView('posterior')">Back (-Z)</button>
+          <button class="sim-btn" onclick="setCameraView('lateral')">Right (+X)</button>
+          <button class="sim-btn" onclick="setCameraView('cranial')">Helmet Macro</button>
+          <button class="sim-btn" onclick="setCameraView('iso')">Isometric</button>
+          <button class="sim-btn" onclick="setCameraView('reset')">Fit Window</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- BOTTOM DOCK -->
+  <section class="wb-panel" id="panel-telemetry" style="bottom: 12px; left: 50%; transform: translateX(-50%); width: 600px; max-width: calc(100vw - 760px);">
+    <div class="wb-panel-header" data-drag="panel-telemetry">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Live Biometric Monitor</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-telemetry')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body">
+      <canvas id="ecg-canvas" width="1080" height="84" style="width:100%; height:42px; background:var(--bg-input); border:1px solid var(--border-panel); border-radius:var(--radius-sm);"></canvas>
+      <div class="telemetry-5-grid">
+        <div class="cae-metric-card" id="box-hr"><div class="cae-metric-top">HEART RATE</div><div><span class="cae-metric-val" id="val-hr">--</span> <span class="cae-metric-unit">BPM</span></div><div class="mini-track"><div class="mini-fill" id="bar-hr"></div></div></div>
+        <div class="cae-metric-card" id="box-temp"><div class="cae-metric-top">AIR TEMP</div><div><span class="cae-metric-val" id="val-temp">--</span> <span class="cae-metric-unit">°C</span></div><div class="mini-track"><div class="mini-fill" id="bar-temp"></div></div></div>
+        <div class="cae-metric-card" id="box-hum"><div class="cae-metric-top">HUMIDITY</div><div><span class="cae-metric-val" id="val-hum">--</span> <span class="cae-metric-unit">%</span></div><div class="mini-track"><div class="mini-fill" id="bar-hum"></div></div></div>
+        <div class="cae-metric-card" id="box-motion"><div class="cae-metric-top">MOTION</div><div><span class="cae-metric-val" id="val-motion">--</span> <span class="cae-metric-unit">g</span></div><div class="mini-track"><div class="mini-fill" id="bar-motion"></div></div></div>
+        <div class="cae-metric-card" id="box-muscle"><div class="cae-metric-top">MUSCLES</div><div><span class="cae-metric-val" id="val-muscle">--</span> <span class="cae-metric-unit">/4</span></div><div class="mini-track"><div class="mini-fill" id="bar-muscle"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+  <script>
+    // =========================================================================
+    // 1. LIVE CHANNELS (ONLY REAL ESP32 DATA - NOTHING IS SIMULATED)
+    // =========================================================================
+    const CH = {
+      hr:     { name: 'Heart Rate (Pulse Sensor)',     unit: 'BPM', min: 40, max: 180, dec: 0, color: '#ef4444', warn: v => v > 120 || v < 45 },
+      temp:   { name: 'Air Temperature (DHT11)',       unit: '°C',  min: 0,  max: 50,  dec: 1, color: '#f59e0b', warn: v => v > 40 },
+      hum:    { name: 'Relative Humidity (DHT11)',     unit: '%',   min: 0,  max: 100, dec: 0, color: '#38bdf8', warn: v => v > 85 },
+      motion: { name: 'Acceleration (MPU6050)',        unit: 'g',   min: 0,  max: 3,   dec: 2, color: '#1d70f5', warn: v => v > 2.5 },
+      gyro:   { name: 'Rotation Rate (MPU6050)',       unit: '°/s', min: 0,  max: 500, dec: 0, color: '#a78bfa', warn: v => false },
+      tilt:   { name: 'Tilt From Vertical (MPU6050)',  unit: '°',   min: 0,  max: 180, dec: 0, color: '#22d3ee', warn: v => false },
+      m0:     { name: 'Left Arm Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
+      m1:     { name: 'Right Arm Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
+      m2:     { name: 'Left Leg Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
+      m3:     { name: 'Right Leg Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 }
+    };
+    const HIST_LEN = 150;
+    const hist = {}; Object.keys(CH).forEach(k => hist[k] = []);
+    const live = { t: 0 };
+    const STALE_MS = 3000;
+
+    function val(k) {
+      if (!live.t || Date.now() - live.t > STALE_MS) return null;
+      const v = live[k];
+      return (v === undefined || v === null || isNaN(v)) ? null : v;
+    }
+    function fmt(k, v) { return v === null ? '--' : v.toFixed(CH[k].dec); }
+    function chStatus(k) {
+      const v = val(k);
+      if (v === null) return 'nodata';
+      return CH[k].warn(v) ? 'alert' : 'ok';
+    }
+
+    // =========================================================================
+    // 2. SUIT SUBSYSTEMS (11 REGIONS) AND THEIR REAL SENSOR CHANNELS
+    // =========================================================================
+    const REGIONS = [
+      { id: 'head',        name: 'Helmet & Cranial Visor',     code: 'HLM-01', normal: [0, 0.85, 0.35],   ch: ['temp', 'hum'],  desc: 'Helmet air temperature and humidity from the DHT11.' },
+      { id: 'chest',       name: 'DCM Chest Display Unit',     code: 'DCM-02', normal: [0, 0.15, 1.0],    ch: ['hr'],           desc: 'Live heart rate from the analog pulse sensor.' },
+      { id: 'lungs',       name: 'Cardiopulmonary Cavity',     code: 'BIO-03', normal: [0, 0.3, 0.85],    ch: ['hr'],           desc: 'Cardiac rhythm from the analog pulse sensor; the heart model beats at the measured rate.' },
+      { id: 'torso',       name: 'PLSS Life Support Pack',     code: 'PLS-04', normal: [0, 0.1, -1.0],    ch: ['temp', 'hum'],  desc: 'Pack-side air temperature and humidity from the DHT11.' },
+      { id: 'left_arm',    name: 'Left Upper Arm Assembly',    code: 'LUA-05', normal: [0.95, 0.2, 0.1],  ch: ['m0'],           desc: 'Left arm muscle activity: capacitive touch pad detecting skin contact.' },
+      { id: 'right_arm',   name: 'Right Upper Arm Assembly',   code: 'RUA-06', normal: [-0.95, 0.2, 0.1], ch: ['m1'],           desc: 'Right arm muscle activity: capacitive touch pad detecting skin contact.' },
+      { id: 'left_wrist',  name: 'Left EV Glove & Disconnect', code: 'LGL-07', normal: [0.9, -0.2, 0.4],  ch: ['m0'],           desc: 'Shares the left arm touch-sensor channel.' },
+      { id: 'right_wrist', name: 'Right EV Glove & Disconnect',code: 'RGL-08', normal: [-0.9, -0.2, 0.4], ch: ['m1'],           desc: 'Shares the right arm touch-sensor channel.' },
+      { id: 'pelvis',      name: 'Waist Bearing & Brief',      code: 'WST-09', normal: [0, -0.2, 0.95],   ch: ['motion', 'gyro', 'tilt'], desc: 'Body motion and orientation from the MPU6050 IMU.' },
+      { id: 'left_leg',    name: 'Left Lower Torso & Boot',    code: 'LLT-10', normal: [0.55, -0.4, 0.3], ch: ['m2'],           desc: 'Left leg muscle activity: capacitive touch pad detecting skin contact.' },
+      { id: 'right_leg',   name: 'Right Lower Torso & Boot',   code: 'RLT-11', normal: [-0.55, -0.4, 0.3],ch: ['m3'],           desc: 'Right leg muscle activity: capacitive touch pad detecting skin contact.' }
+    ];
+    const regionStatus = r => chStatus(r.ch[0]);
+
+    // =========================================================================
+    // 3. BLUETOOTH (WEB BLUETOOTH, ESP32 BLE NOTIFY STREAM)
+    // =========================================================================
+    const SVC_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const TX_UUID  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    let bleDev = null, rxBuf = '', bleState = 'IDLE', manualDisc = false;
+    const decoder = new TextDecoder();
+    const pulseQueue = [];
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.display = 'block';
+      setTimeout(() => t.style.display = 'none', 6000);
+    }
+    function setBle(s) {
+      bleState = s;
+      const dot = document.getElementById('global-dot'), st = document.getElementById('global-state');
+      const map = { IDLE: ['idle', 'NOT CONNECTED'], CONNECTING: ['warn', 'CONNECTING'], LIVE: ['', 'LIVE'], LOST: ['critical', 'LINK LOST'] };
+      dot.className = 'status-led ' + map[s][0];
+      st.textContent = map[s][1];
+      document.getElementById('btn-connect').textContent = s === 'LIVE' ? 'Disconnect ESP32' : 'Connect ESP32 (Bluetooth)';
+    }
+    async function connectBLE() {
+      if (bleState === 'LIVE' && bleDev && bleDev.gatt.connected) {
+        manualDisc = true; bleDev.gatt.disconnect(); setBle('IDLE'); return;
+      }
+      if (!navigator.bluetooth) { showToast('Web Bluetooth needs Chrome or Edge, opened from https:// or localhost.'); return; }
+      try {
+        manualDisc = false;
+        bleDev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC_UUID] }, { namePrefix: 'EVA-SUIT' }], optionalServices: [SVC_UUID] });
+        bleDev.addEventListener('gattserverdisconnected', onBleDisc);
+        await openGatt();
+      } catch (e) {
+        if (bleState !== 'LIVE') setBle('IDLE');
+        if (e && e.name !== 'NotFoundError') showToast('Bluetooth: ' + (e.message || e));
+      }
+    }
+    async function openGatt() {
+      setBle('CONNECTING');
+      const server = await bleDev.gatt.connect();
+      await new Promise(r => setTimeout(r, 800));
+      const svc = await server.getPrimaryService(SVC_UUID);
+      const chr = await svc.getCharacteristic(TX_UUID);
+      await chr.startNotifications();
+      chr.addEventListener('characteristicvaluechanged', onBleData);
+      rxBuf = '';
+      setBle('LIVE');
+    }
+    function onBleDisc() {
+      if (manualDisc) return;
+      setBle('LOST');
+      const retry = async () => {
+        if (manualDisc || !bleDev || bleDev.gatt.connected) return;
+        try { await openGatt(); } catch (e) { setBle('LOST'); showToast('Bluetooth: ' + (e.message || e)); setTimeout(retry, 3000); }
+      };
+      setTimeout(retry, 1500);
+    }
+    function onBleData(e) {
+      rxBuf += decoder.decode(e.target.value);
+      let i;
+      while ((i = rxBuf.indexOf('\n')) >= 0) {
+        const line = rxBuf.slice(0, i).trim();
+        rxBuf = rxBuf.slice(i + 1);
+        if (line) parseLine(line);
+      }
+      if (rxBuf.length > 400) rxBuf = '';
+    }
+    // line: hr,p1;p2;p3;p4;p5,temp,hum,ax,ay,az,gx,gy,gz,m0,m1,m2,m3
+    function parseLine(line) {
+      const f = line.split(',');
+      if (f.length < 14) return;
+      const n = x => { const v = parseFloat(x); return isNaN(v) ? null : v; };
+      live.hr = n(f[0]); live.temp = n(f[2]); live.hum = n(f[3]);
+      const [ax, ay, az, gx, gy, gz] = [4, 5, 6, 7, 8, 9].map(i => n(f[i]));
+      if ([ax, ay, az].every(v => v !== null)) {
+        const m = Math.sqrt(ax * ax + ay * ay + az * az);
+        live.motion = m; live.tilt = m > 0 ? Math.acos(Math.max(-1, Math.min(1, az / m))) * 180 / Math.PI : null;
+      } else { live.motion = null; live.tilt = null; }
+      live.gyro = [gx, gy, gz].every(v => v !== null) ? Math.sqrt(gx * gx + gy * gy + gz * gz) : null;
+      for (let i = 0; i < 4; i++) live['m' + i] = n(f[10 + i]);
+      live.t = Date.now();
+      f[1].split(';').forEach(p => { const v = parseInt(p, 10); if (!isNaN(v)) pulseQueue.push(v); });
+      if (pulseQueue.length > 200) pulseQueue.splice(0, pulseQueue.length - 200);
+      Object.keys(CH).forEach(k => {
+        const v = live[k];
+        hist[k].push(v === null || v === undefined || isNaN(v) ? null : v);
+        if (hist[k].length > HIST_LEN) hist[k].shift();
+      });
+    }
+
+    // =========================================================================
+    // 4. THREE.JS SCENE, CAMERA & RENDERER
+    // =========================================================================
+    const container = document.getElementById('webgl-container');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.05, 200);
+    camera.position.set(0, 0.12, 2.55);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 0.65;
+    controls.maxDistance = 8.0;
+    controls.target.set(0, 0.04, 0);
+    controls.update();
+
+    scene.add(new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.9));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(3.5, 4.5, 4.0); keyLight.castShadow = true; keyLight.shadow.mapSize.set(2048, 2048);
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.85); fillLight.position.set(-3.5, 1.5, 2.0); scene.add(fillLight);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.1); rimLight.position.set(0, 2.5, -3.5); scene.add(rimLight);
+
+    const gridHelper = new THREE.PolarGridHelper(1.65, 16, 6, 64, 0x262932, 0x181a20);
+    gridHelper.position.y = -1.02;
+    scene.add(gridHelper);
+
+    // Starfield
+    const starGroup = new THREE.Group();
+    [
+      { count: 1400, radius: 65, size: 0.07, color: 0xffffff, opacity: 0.55 },
+      { count: 800,  radius: 45, size: 0.10, color: 0xbfdbfe, opacity: 0.45 },
+      { count: 350,  radius: 30, size: 0.13, color: 0x93c5fd, opacity: 0.35 },
+      { count: 120,  radius: 20, size: 0.16, color: 0x60a5fa, opacity: 0.30 }
+    ].forEach(layer => {
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(layer.count * 3);
+      for (let i = 0; i < layer.count * 3; i += 3) {
+        const theta = Math.random() * 2 * Math.PI, phi = Math.acos(2 * Math.random() - 1);
+        const r = layer.radius + (Math.random() - 0.5) * 4;
+        pos[i] = r * Math.sin(phi) * Math.cos(theta); pos[i+1] = r * Math.sin(phi) * Math.sin(theta); pos[i+2] = r * Math.cos(phi);
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      starGroup.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: layer.color, size: layer.size, transparent: true, opacity: layer.opacity, depthWrite: false })));
+    });
+    scene.add(starGroup);
+
+    // =========================================================================
+    // 5. LIVE SENSOR PROBES (GREEN = LIVE, RED = ALERT, GREY = NO DATA)
+    // =========================================================================
+    const sensorProbesGroup = new THREE.Group();
+    scene.add(sensorProbesGroup);
+    let probesEnabled = true;
+    let probeMeshes = [];
+
+    function rebuildSensorProbes() {
+      while (sensorProbesGroup.children.length > 0) sensorProbesGroup.remove(sensorProbesGroup.children[0]);
+      probeMeshes = [];
+      const probeGeo = new THREE.SphereGeometry(0.016, 12, 12);
+      REGIONS.forEach(r => {
+        if (!regionGroups[r.id]) return;
+        const probe = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: 0x4b5263 }));
+        probe.userData = { regionId: r.id };
+        sensorProbesGroup.add(probe);
+        probeMeshes.push(probe);
+      });
+    }
+    const PROBE_COL = { ok: 0x10b981, alert: 0xef4444, nodata: 0x4b5263 };
+    function updateSensorProbePositions(elapsed) {
+      if (!probesEnabled) return;
+      probeMeshes.forEach(probe => {
+        const rId = probe.userData.regionId, grp = regionGroups[rId];
+        if (!grp) return;
+        const r = REGIONS.find(x => x.id === rId), st = regionStatus(r);
+        probe.position.copy(grp.userData.centroid).add(grp.position);
+        probe.position.z += 0.04;
+        probe.scale.setScalar(st === 'nodata' ? 1 : 1 + Math.sin(elapsed * 5) * 0.18);
+        probe.material.color.setHex(selectedRegionId === rId ? 0x1d70f5 : PROBE_COL[st]);
+      });
+    }
+    function toggleSensorProbes() {
+      probesEnabled = !probesEnabled;
+      sensorProbesGroup.visible = probesEnabled;
+      document.getElementById('btn-probes').classList.toggle('active', probesEnabled);
+    }
+
+    // =========================================================================
+    // 6. TRIANGLE-SLICED REAL 3D ASTRONAUT DISSECTION ENGINE (UNCHANGED)
+    // =========================================================================
+    const astronautRoot = new THREE.Group();
+    scene.add(astronautRoot);
+
+    let regionGroups = {};
+    let ghostGroups = {};
+    let pickableMeshes = [];
+    let selectedRegionId = null;
+    let allExploded = false;
+    let wireframeMode = false;
+    let displacementScale = 0.38;
+    let autoRotate = false;
+    let internalHeartMesh = null;
+    let internalLungsGroup = null;
+
+    function classifyVertexRegion(nx, ny, nz) {
+      if (ny > 0.77) return 'head';
+      if (ny < 0.43) { return nx >= 0 ? 'left_leg' : 'right_leg'; }
+      if (ny >= 0.43 && ny < 0.53 && Math.abs(nx) < 0.24) { return 'pelvis'; }
+      if (Math.abs(nx) >= 0.21) {
+        if (ny < 0.58 || Math.abs(nx) > 0.34) { return nx >= 0 ? 'left_wrist' : 'right_wrist'; }
+        return nx >= 0 ? 'left_arm' : 'right_arm';
+      }
+      if (nz >= 0.02) { return 'chest'; }
+      return 'torso';
+    }
+
+    function createInternalOrgans() {
+      const group = new THREE.Group();
+      const lungMat = new THREE.MeshStandardMaterial({ color: 0x1d70f5, emissive: 0x1d70f5, emissiveIntensity: 0.4, wireframe: true, transparent: true, opacity: 0.78 });
+      const leftLung = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 14), lungMat);
+      leftLung.scale.set(0.85, 1.35, 0.75); leftLung.position.set(0.075, 0.26, 0.02);
+      const rightLung = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 14), lungMat);
+      rightLung.scale.set(0.85, 1.35, 0.75); rightLung.position.set(-0.075, 0.26, 0.02);
+      const heartMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xdc2626, emissiveIntensity: 0.55, roughness: 0.3, metalness: 0.1 });
+      internalHeartMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.048, 2), heartMat);
+      internalHeartMesh.position.set(0.02, 0.23, 0.05);
+      group.add(leftLung, rightLung, internalHeartMesh);
+      internalLungsGroup = group;
+      return group;
+    }
+
+    function buildSlicedAstronautFromGLTF(gltfScene, labelText) {
+      while (astronautRoot.children.length > 0) astronautRoot.remove(astronautRoot.children[0]);
+      regionGroups = {}; ghostGroups = {}; pickableMeshes = []; selectedRegionId = null; allExploded = false;
+
+      gltfScene.updateMatrixWorld(true);
+      const rawBox = new THREE.Box3().setFromObject(gltfScene);
+      const rawSize = new THREE.Vector3(), rawCenter = new THREE.Vector3();
+      rawBox.getSize(rawSize); rawBox.getCenter(rawCenter);
+      const targetHeight = 2.0;
+      const scaleFactor = targetHeight / (rawSize.y || 1);
+
+      REGIONS.forEach(r => {
+        const g = new THREE.Group();
+        g.name = r.id;
+        g.userData = { regionId: r.id, normal: r.normal, centroid: new THREE.Vector3() };
+        regionGroups[r.id] = g;
+        astronautRoot.add(g);
+        const ghost = new THREE.Group();
+        ghost.visible = false;
+        ghostGroups[r.id] = ghost;
+        astronautRoot.add(ghost);
+      });
+
+      const ghostWireMat = new THREE.MeshBasicMaterial({ color: 0x1d70f5, wireframe: true, transparent: true, opacity: 0.16, depthWrite: false });
+
+      gltfScene.traverse(child => {
+        if (!child.isMesh || !child.geometry) return;
+        const geom = child.geometry.index ? child.geometry.toNonIndexed() : child.geometry.clone();
+        geom.applyMatrix4(child.matrixWorld);
+        const posAttr = geom.attributes.position, normAttr = geom.attributes.normal, uvAttr = geom.attributes.uv;
+        const vCount = posAttr.count;
+
+        for (let i = 0; i < vCount; i++) {
+          posAttr.setXYZ(i,
+            (posAttr.getX(i) - rawCenter.x) * scaleFactor,
+            (posAttr.getY(i) - rawCenter.y) * scaleFactor,
+            (posAttr.getZ(i) - rawCenter.z) * scaleFactor);
+        }
+
+        const buckets = {};
+        REGIONS.forEach(r => { buckets[r.id] = { pos: [], norm: [], uv: [] }; });
+
+        for (let i = 0; i < vCount; i += 3) {
+          const cx = (posAttr.getX(i) + posAttr.getX(i+1) + posAttr.getX(i+2)) / 3;
+          const cy = (posAttr.getY(i) + posAttr.getY(i+1) + posAttr.getY(i+2)) / 3;
+          const cz = (posAttr.getZ(i) + posAttr.getZ(i+1) + posAttr.getZ(i+2)) / 3;
+          const ny = (cy + targetHeight / 2) / targetHeight;
+          const b = buckets[classifyVertexRegion(cx, ny, cz)];
+          for (let k = 0; k < 3; k++) {
+            const idx = i + k;
+            b.pos.push(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+            if (normAttr) b.norm.push(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx));
+            if (uvAttr) b.uv.push(uvAttr.getX(idx), uvAttr.getY(idx));
+          }
+        }
+
+        REGIONS.forEach(r => {
+          const b = buckets[r.id];
+          if (b.pos.length === 0) return;
+          const subGeo = new THREE.BufferGeometry();
+          subGeo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+          if (b.norm.length > 0) subGeo.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm, 3));
+          else subGeo.computeVertexNormals();
+          if (b.uv.length > 0) subGeo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+          const baseMat = child.material ? child.material.clone() : new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.15 });
+          baseMat.transparent = true; baseMat.opacity = 1.0;
+          const subMesh = new THREE.Mesh(subGeo, baseMat);
+          subMesh.castShadow = true; subMesh.receiveShadow = true;
+          subMesh.userData = { regionId: r.id, origMat: baseMat.clone() };
+          regionGroups[r.id].add(subMesh);
+          pickableMeshes.push(subMesh);
+          ghostGroups[r.id].add(new THREE.Mesh(subGeo, ghostWireMat));
+        });
+      });
+
+      const organs = createInternalOrgans();
+      regionGroups['lungs'].add(organs);
+      organs.traverse(c => {
+        if (c.isMesh) { c.userData = { regionId: 'lungs', origMat: c.material.clone() }; pickableMeshes.push(c); }
+      });
+
+      REGIONS.forEach(r => {
+        const box = new THREE.Box3().setFromObject(regionGroups[r.id]);
+        if (!box.isEmpty()) box.getCenter(regionGroups[r.id].userData.centroid);
+        else regionGroups[r.id].userData.centroid.set(0, 0.25, 0);
+      });
+
+      document.getElementById('asset-label').textContent = labelText;
+      rebuildSensorProbes();
+      renderSubsystemList();
+      renderBig();
+      setCameraView('reset');
+    }
+
+    const gltfLoader = new THREE.GLTFLoader();
+    const loaderBar = document.getElementById('loader-bar');
+
+    function loadDefaultAstronaut() {
+      loaderBar.style.opacity = '1'; loaderBar.style.width = '35%';
+      gltfLoader.load(
+        'https://modelviewer.dev/shared-assets/models/Astronaut.glb',
+        (gltf) => {
+          loaderBar.style.width = '100%';
+          setTimeout(() => { loaderBar.style.opacity = '0'; }, 350);
+          buildSlicedAstronautFromGLTF(gltf.scene, 'Astronaut.glb • 2.00m');
+        },
+        (xhr) => { if (xhr.total) loaderBar.style.width = `${Math.min(95, Math.round((xhr.loaded / xhr.total) * 100))}%`; },
+        (err) => {
+          console.warn('Remote GLB unreachable, building procedural fallback astronaut:', err);
+          loaderBar.style.opacity = '0';
+          buildProceduralAstronautFallback();
+        }
+      );
+    }
+
+    function buildProceduralAstronautFallback() {
+      const dummyGroup = new THREE.Group();
+      const suitMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.2 });
+      const visorMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.15, metalness: 0.85 });
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 24), visorMat); helmet.position.set(0, 0.76, 0.02);
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.56, 0.28), suitMat); torso.position.set(0, 0.24, 0);
+      const plss = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.54, 0.20), suitMat); plss.position.set(0, 0.28, -0.22);
+      const lArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.55, 16), suitMat); lArm.position.set(0.32, 0.22, 0);
+      const rArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.55, 16), suitMat); rArm.position.set(-0.32, 0.22, 0);
+      const lLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.09, 0.75, 16), suitMat); lLeg.position.set(0.13, -0.45, 0);
+      const rLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.09, 0.75, 16), suitMat); rLeg.position.set(-0.13, -0.45, 0);
+      dummyGroup.add(helmet, torso, plss, lArm, rArm, lLeg, rLeg);
+      buildSlicedAstronautFromGLTF(dummyGroup, 'Procedural_EMU.glb • 2.00m');
+    }
+
+    loadDefaultAstronaut();
+
+    document.getElementById('glb-input').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) parseUploadedGLB(f); });
+    window.addEventListener('dragover', (e) => { e.preventDefault(); document.getElementById('drop-overlay').style.display = 'flex'; });
+    window.addEventListener('dragleave', (e) => { if (e.target.id === 'drop-overlay') document.getElementById('drop-overlay').style.display = 'none'; });
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      document.getElementById('drop-overlay').style.display = 'none';
+      const f = e.dataTransfer.files[0];
+      if (f) parseUploadedGLB(f);
+    });
+    function parseUploadedGLB(file) {
+      const url = URL.createObjectURL(file);
+      loaderBar.style.opacity = '1'; loaderBar.style.width = '50%';
+      gltfLoader.load(url, (gltf) => {
+        loaderBar.style.width = '100%';
+        setTimeout(() => { loaderBar.style.opacity = '0'; }, 300);
+        buildSlicedAstronautFromGLTF(gltf.scene, `${file.name} • 2.00m`);
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // =========================================================================
+    // 7. TREE, SELECTION, DISSECTION
+    // =========================================================================
+    function renderSubsystemList() {
+      const listEl = document.getElementById('part-list');
+      listEl.innerHTML = '';
+      REGIONS.forEach(r => {
+        const item = document.createElement('div');
+        item.className = `tree-item ${selectedRegionId === r.id ? 'selected' : ''}`;
+        item.id = `row-${r.id}`;
+        item.innerHTML = `
+          <div class="tree-item-left"><span class="status-led idle" id="led-${r.id}" style="width:5px; height:5px;"></span><span class="tree-item-name">${r.name}</span></div>
+          <div class="tree-item-right"><span class="tree-code">${r.code}</span><button class="eye-btn ${selectedRegionId === r.id ? 'active' : ''}" title="Dissect Sub-Volume">⊕</button></div>`;
+        item.onclick = () => selectOrToggleRegion(r.id);
+        listEl.appendChild(item);
+      });
+    }
+
+    // view shift keeps the astronaut clear of the big data screen
+    const viewShift = { v: 0 };
+    function shiftView(open) {
+      gsap.to(viewShift, { v: open && window.innerWidth > 900 ? 190 : 0, duration: 0.8, ease: 'power3.out' });
+    }
+
+    function selectOrToggleRegion(id) {
+      if (selectedRegionId === id) { restoreAllParts(); return; }
+      selectedRegionId = id;
+      allExploded = false;
+      document.getElementById('btn-explode-all').classList.remove('active');
+      document.getElementById('btn-select-mode').classList.remove('active');
+      REGIONS.forEach(r => {
+        const row = document.getElementById(`row-${r.id}`);
+        if (row) row.classList.toggle('selected', r.id === id);
+        const grp = regionGroups[r.id], ghost = ghostGroups[r.id];
+        if (!grp) return;
+        if (r.id === id) {
+          const [nx, ny, nz] = r.normal;
+          ghost.visible = true;
+          gsap.to(grp.position, { x: nx * displacementScale, y: ny * displacementScale, z: nz * displacementScale, duration: 1.05, ease: 'elastic.out(1, 0.5)' });
+          setGroupOpacity(grp, 1.0);
+        } else {
+          ghost.visible = false;
+          gsap.to(grp.position, { x: 0, y: 0, z: 0, duration: 0.65, ease: 'power3.out' });
+          setGroupOpacity(grp, 0.25);
+        }
+      });
+      shiftView(true);
+      renderBig();
+    }
+
+    function restoreAllParts() {
+      selectedRegionId = null; allExploded = false;
+      document.getElementById('btn-explode-all').classList.remove('active');
+      document.getElementById('btn-select-mode').classList.add('active');
+      shiftView(false);
+      renderBig();
+      REGIONS.forEach(r => {
+        const row = document.getElementById(`row-${r.id}`);
+        if (row) row.classList.remove('selected');
+        const grp = regionGroups[r.id], ghost = ghostGroups[r.id];
+        if (!grp) return;
+        ghost.visible = false;
+        gsap.to(grp.position, { x: 0, y: 0, z: 0, duration: 0.75, ease: 'power3.out' });
+        setGroupOpacity(grp, 1.0);
+      });
+    }
+
+    function toggleExplodeAll() {
+      allExploded = !allExploded;
+      document.getElementById('btn-explode-all').classList.toggle('active', allExploded);
+      document.getElementById('btn-select-mode').classList.toggle('active', !allExploded);
+      selectedRegionId = null;
+      shiftView(false);
+      renderBig();
+      REGIONS.forEach(r => {
+        const row = document.getElementById(`row-${r.id}`);
+        if (row) row.classList.remove('selected');
+        const grp = regionGroups[r.id], ghost = ghostGroups[r.id];
+        if (!grp) return;
+        if (allExploded) {
+          const [nx, ny, nz] = r.normal;
+          ghost.visible = true;
+          gsap.to(grp.position, { x: nx * displacementScale * 0.85, y: ny * displacementScale * 0.85, z: nz * displacementScale * 0.85, duration: 1.1, ease: 'elastic.out(1, 0.5)' });
+        } else {
+          ghost.visible = false;
+          gsap.to(grp.position, { x: 0, y: 0, z: 0, duration: 0.75, ease: 'power3.out' });
+        }
+        setGroupOpacity(grp, 1.0);
+      });
+    }
+
+    function updateDisplacementScale(val) {
+      displacementScale = parseFloat(val);
+      document.getElementById('disp-val').textContent = `${Math.round(displacementScale * 1000)} mm`;
+      if (selectedRegionId) {
+        const r = REGIONS.find(x => x.id === selectedRegionId), grp = regionGroups[selectedRegionId];
+        if (r && grp) gsap.to(grp.position, { x: r.normal[0] * displacementScale, y: r.normal[1] * displacementScale, z: r.normal[2] * displacementScale, duration: 0.35 });
+      } else if (allExploded) {
+        REGIONS.forEach(r => {
+          const grp = regionGroups[r.id];
+          if (grp) gsap.to(grp.position, { x: r.normal[0] * displacementScale * 0.85, y: r.normal[1] * displacementScale * 0.85, z: r.normal[2] * displacementScale * 0.85, duration: 0.35 });
+        });
+      }
+    }
+
+    function setGroupOpacity(group, opacity) {
+      group.traverse(c => {
+        if (c.isMesh && c.material) { c.material.transparent = true; gsap.to(c.material, { opacity: opacity, duration: 0.35 }); }
+      });
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let downPos = { x: 0, y: 0 };
+    container.addEventListener('pointerdown', (e) => { downPos = { x: e.clientX, y: e.clientY }; });
+    container.addEventListener('pointerup', (e) => {
+      if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) return;
+      pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(pickableMeshes, false);
+      if (hits.length > 0) { const id = hits[0].object.userData.regionId; if (id) selectOrToggleRegion(id); }
+      else if (selectedRegionId) restoreAllParts();
+    });
+
+    // =========================================================================
+    // 8. CAMERA PRESETS & VIEWPORT MODES
+    // =========================================================================
+    const CAM_VIEWS = {
+      reset:     { pos: [0, 0.12, 2.55],    target: [0, 0.04, 0] },
+      iso:       { pos: [1.65, 0.75, 1.95], target: [0, 0.06, 0] },
+      anterior:  { pos: [0, 0.10, 2.40],    target: [0, 0.05, 0] },
+      posterior: { pos: [0, 0.15, -2.45],   target: [0, 0.05, 0] },
+      lateral:   { pos: [2.45, 0.10, 0],    target: [0, 0.05, 0] },
+      cranial:   { pos: [0, 0.68, 0.95],    target: [0, 0.62, 0] }
+    };
+    function setCameraView(key) {
+      const v = CAM_VIEWS[key] || CAM_VIEWS.reset;
+      gsap.to(camera.position, { x: v.pos[0], y: v.pos[1], z: v.pos[2], duration: 1.1, ease: 'power3.out' });
+      gsap.to(controls.target, { x: v.target[0], y: v.target[1], z: v.target[2], duration: 1.1, ease: 'power3.out' });
+    }
+    function toggleWireframe() {
+      wireframeMode = !wireframeMode;
+      document.getElementById('btn-wireframe').classList.toggle('active', wireframeMode);
+      pickableMeshes.forEach(m => { if (m.material) m.material.wireframe = wireframeMode; });
+    }
+    function toggleAutoRotate(v) { autoRotate = v; }
+
+    // =========================================================================
+    // 9. GRAPHICAL RENDERING: BIG DATA SCREEN, BOTTOM DOCK, WAVEFORM
+    // =========================================================================
+    function drawGraph(canvas, series, ch) {
+      const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let i = 1; i < 4; i++) { ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); }
+      ctx.stroke();
+      ctx.fillStyle = '#697586'; ctx.font = '18px JetBrains Mono, monospace';
+      ctx.fillText(ch.max + '', 6, 20); ctx.fillText(ch.min + '', 6, h - 8);
+      const step = w / (HIST_LEN - 1), off = HIST_LEN - series.length;
+      const yOf = v => h - 4 - ((Math.max(ch.min, Math.min(ch.max, v)) - ch.min) / (ch.max - ch.min)) * (h - 8);
+      ctx.strokeStyle = ch.color; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      let open = false, lastX = 0;
+      ctx.beginPath();
+      series.forEach((v, i) => {
+        if (v === null) { open = false; return; }
+        const x = (off + i) * step, y = yOf(v);
+        if (!open) { ctx.moveTo(x, y); open = true; } else ctx.lineTo(x, y);
+        lastX = x;
+      });
+      ctx.stroke();
+      if (!series.some(v => v !== null)) {
+        ctx.fillStyle = '#697586'; ctx.font = '22px Inter, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('AWAITING ESP32 DATA', w / 2, h / 2 + 8); ctx.textAlign = 'left';
+      }
+    }
+
+    function setBar(fillEl, k, v) {
+      const ch = CH[k];
+      fillEl.style.width = v === null ? '0%' : `${Math.max(0, Math.min(100, (v - ch.min) / (ch.max - ch.min) * 100))}%`;
+      fillEl.style.background = v !== null && ch.warn(v) ? 'var(--status-critical)' : ch.color;
+    }
+
+    function renderBig() {
+      const r = REGIONS.find(x => x.id === selectedRegionId);
+      document.getElementById('big-empty').style.display = r ? 'none' : 'block';
+      document.getElementById('big-main').style.display = r ? 'flex' : 'none';
+      if (!r) return;
+      const k = r.ch[0], ch = CH[k], v = val(k), st = chStatus(k);
+      document.getElementById('big-name').textContent = r.name;
+      document.getElementById('big-code').textContent = r.code;
+      document.getElementById('big-label').textContent = ch.name;
+      const num = document.getElementById('big-num');
+      num.textContent = fmt(k, v);
+      num.style.color = st === 'alert' ? 'var(--status-critical)' : st === 'nodata' ? 'var(--text-muted)' : ch.color;
+      document.getElementById('big-unit').textContent = ch.unit;
+      const stEl = document.getElementById('big-state');
+      stEl.textContent = st === 'nodata' ? 'NO DATA' : st === 'alert' ? 'ALERT' : (ch.touch ? (v > 20 ? 'TOUCH DETECTED' : 'NO CONTACT') : 'LIVE');
+      stEl.style.color = st === 'alert' ? 'var(--status-critical)' : st === 'nodata' ? 'var(--text-muted)' : 'var(--status-nominal)';
+      drawGraph(document.getElementById('big-canvas'), hist[k], ch);
+      const bars = document.getElementById('big-bars');
+      if (bars.dataset.key !== r.id) {
+        bars.dataset.key = r.id;
+        bars.innerHTML = r.ch.slice(1).map(c => `<div class="bar-row"><div class="bar-top"><span>${CH[c].name}</span><b id="bv-${c}">--</b></div><div class="bar-track"><div class="bar-fill" id="bf-${c}"></div></div></div>`).join('');
+      }
+      r.ch.slice(1).forEach(c => {
+        const bv = val(c);
+        document.getElementById(`bv-${c}`).textContent = bv === null ? '--' : `${fmt(c, bv)} ${CH[c].unit}`;
+        setBar(document.getElementById(`bf-${c}`), c, bv);
+      });
+      document.getElementById('big-desc').textContent = r.desc;
+    }
+
+    function setCard(id, k, v, extraClass) {
+      const st = v === null ? '' : (CH[k] && CH[k].warn(v) ? 'crit' : 'nominal');
+      document.getElementById(`box-${id}`).className = `cae-metric-card ${st}`;
+    }
+
+    function renderBottom() {
+      ['hr', 'temp', 'hum', 'motion'].forEach(k => {
+        const v = val(k);
+        document.getElementById(`val-${k}`).textContent = fmt(k, v);
+        setBar(document.getElementById(`bar-${k}`), k, v);
+        setCard(k, k, v);
+      });
+      const m = [0, 1, 2, 3].map(i => val('m' + i));
+      const any = m.some(v => v !== null), n = m.filter(v => v !== null && v > 20).length;
+      document.getElementById('val-muscle').textContent = any ? n : '--';
+      document.getElementById('bar-muscle').style.width = any ? `${n * 25}%` : '0%';
+      document.getElementById('box-muscle').className = `cae-metric-card ${any ? 'nominal' : ''}`;
+    }
+
+    function renderStatus() {
+      REGIONS.forEach(r => {
+        const led = document.getElementById(`led-${r.id}`);
+        if (!led) return;
+        const st = regionStatus(r);
+        led.className = 'status-led ' + (st === 'nodata' ? 'idle' : st === 'alert' ? 'critical' : '');
+      });
+      document.getElementById('met-clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
+      if (bleState === 'LIVE' && live.t && Date.now() - live.t > STALE_MS) {
+        document.getElementById('global-state').textContent = 'NO DATA';
+        document.getElementById('global-dot').className = 'status-led warn';
+      } else if (bleState === 'LIVE') {
+        document.getElementById('global-state').textContent = 'LIVE';
+        document.getElementById('global-dot').className = 'status-led';
+      }
+    }
+
+    function renderAll() { renderBottom(); renderBig(); renderStatus(); }
+    setInterval(renderAll, 200);
+
+    // Real pulse waveform (raw ADC samples streamed from the ESP32 at 50 Hz)
+    const ecgCanvas = document.getElementById('ecg-canvas'), ecgCtx = ecgCanvas.getContext('2d');
+    const ecgBuf = new Array(200).fill(null);
+    let ecgAcc = 0;
+    function updateEcgCanvas(dt) {
+      ecgAcc += dt * 50;
+      while (ecgAcc >= 1) {
+        ecgAcc -= 1;
+        if (pulseQueue.length) { ecgBuf.push(pulseQueue.shift()); ecgBuf.shift(); }
+        else { ecgAcc = 0; break; }
+      }
+      if (live.t && Date.now() - live.t > STALE_MS) { ecgBuf.fill(null); }
+      const w = ecgCanvas.width, h = ecgCanvas.height;
+      ecgCtx.clearRect(0, 0, w, h);
+      ecgCtx.strokeStyle = 'rgba(255,255,255,0.04)'; ecgCtx.lineWidth = 1; ecgCtx.beginPath();
+      [0.25, 0.5, 0.75].forEach(f => { ecgCtx.moveTo(w * f, 0); ecgCtx.lineTo(w * f, h); });
+      ecgCtx.moveTo(0, h / 2); ecgCtx.lineTo(w, h / 2); ecgCtx.stroke();
+      const vals = ecgBuf.filter(v => v !== null);
+      if (vals.length < 5) {
+        ecgCtx.fillStyle = '#697586'; ecgCtx.font = '20px Inter, sans-serif'; ecgCtx.textAlign = 'center';
+        ecgCtx.fillText('PULSE WAVEFORM: AWAITING ESP32 DATA', w / 2, h / 2 + 7); ecgCtx.textAlign = 'left';
+        return;
+      }
+      const mn = Math.min(...vals), mx = Math.max(...vals), span = Math.max(mx - mn, 60);
+      ecgCtx.strokeStyle = '#10b981'; ecgCtx.lineWidth = 3; ecgCtx.beginPath();
+      let open = false;
+      ecgBuf.forEach((v, i) => {
+        if (v === null) { open = false; return; }
+        const x = i / (ecgBuf.length - 1) * w, y = h - 8 - ((v - mn) / span) * (h - 16);
+        if (!open) { ecgCtx.moveTo(x, y); open = true; } else ecgCtx.lineTo(x, y);
+      });
+      ecgCtx.stroke();
+    }
+
+    // =========================================================================
+    // 10. DRAGGABLE & COLLAPSIBLE DOCKS
+    // =========================================================================
+    function togglePanel(id) { document.getElementById(id).classList.toggle('collapsed'); }
+
+    function resetWorkspace() {
+      const sub = document.getElementById('panel-subsystems');
+      sub.style.top = '52px'; sub.style.left = '12px'; sub.classList.remove('collapsed');
+      const insp = document.getElementById('panel-inspector');
+      insp.style.top = '52px'; insp.style.right = '12px'; insp.style.left = 'auto'; insp.classList.remove('collapsed');
+      const cam = document.getElementById('panel-camera');
+      cam.style.top = '560px'; cam.style.right = '12px'; cam.style.left = 'auto'; cam.classList.remove('collapsed');
+      const tel = document.getElementById('panel-telemetry');
+      tel.style.bottom = '12px'; tel.style.top = 'auto'; tel.style.left = '50%'; tel.style.transform = 'translateX(-50%)'; tel.classList.remove('collapsed');
+      restoreAllParts();
+      setCameraView('reset');
+    }
+
+    let dragTarget = null;
+    let dragOffset = { x: 0, y: 0 };
+    document.querySelectorAll('.wb-panel-header[data-drag]').forEach(header => {
+      header.addEventListener('pointerdown', (e) => {
+        if (e.target.tagName === 'BUTTON') return;
+        dragTarget = document.getElementById(header.getAttribute('data-drag'));
+        const rect = dragTarget.getBoundingClientRect();
+        dragTarget.style.transform = 'none';
+        dragTarget.style.bottom = 'auto'; dragTarget.style.right = 'auto';
+        dragTarget.style.left = `${rect.left}px`; dragTarget.style.top = `${rect.top}px`;
+        dragOffset.x = e.clientX - rect.left; dragOffset.y = e.clientY - rect.top;
+      });
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!dragTarget) return;
+      dragTarget.style.left = `${Math.max(6, Math.min(window.innerWidth - dragTarget.offsetWidth - 6, e.clientX - dragOffset.x))}px`;
+      dragTarget.style.top = `${Math.max(46, Math.min(window.innerHeight - 36, e.clientY - dragOffset.y))}px`;
+    });
+    window.addEventListener('pointerup', () => { dragTarget = null; });
+
+    // =========================================================================
+    // 11. RENDER LOOP
+    // =========================================================================
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta(), elapsed = clock.getElapsedTime();
+      starGroup.rotation.y += dt * 0.004;
+      if (autoRotate && !selectedRegionId) astronautRoot.rotation.y += dt * 0.25;
+      if (internalHeartMesh) {
+        const hr = val('hr');
+        internalHeartMesh.scale.setScalar(hr ? 1 + Math.sin(elapsed * (hr / 60) * Math.PI * 2) * 0.12 : 1);
+      }
+      updateSensorProbePositions(elapsed);
+      updateEcgCanvas(dt);
+      controls.update();
+      if (viewShift.v > 0.5) camera.setViewOffset(window.innerWidth, window.innerHeight, viewShift.v, 0, window.innerWidth, window.innerHeight);
+      else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+      renderer.render(scene, camera);
+    }
+    animate();
+    setBle('IDLE');
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
