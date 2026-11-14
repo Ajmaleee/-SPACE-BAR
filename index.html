@@ -167,6 +167,37 @@
     #loader-bar { position: fixed; top: 42px; left: 0; height: 2px; width: 0%; background: var(--sim-blue); z-index: 50; transition: width 0.2s, opacity 0.3s; }
     #toast { position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 60; background: var(--bg-panel); border: 1px solid var(--status-critical); color: #fca5a5; padding: 6px 12px; border-radius: var(--radius-md); font-size: 11px; display: none; }
     @media (max-width: 1100px) { .breadcrumb .analysis-badge { display: none; } }
+
+    /* ---- Health assessment panel (new, same theme) ---- */
+    .health-score { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; background: var(--bg-panel-alt); border: 1px solid var(--border-panel); border-radius: var(--radius-md); }
+    .health-big { display: flex; align-items: baseline; gap: 8px; }
+    .health-num { font-family: 'JetBrains Mono', monospace; font-size: 40px; font-weight: 700; line-height: 1; }
+    .health-grade { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; }
+    .health-sub { font-size: 9.5px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+    .health-phase-row { display: flex; gap: 6px; margin: 2px 8px; }
+    .health-phase-btn { flex: 1; background: var(--bg-input); border: 1px solid var(--border-panel); color: var(--text-secondary); padding: 3px 6px; border-radius: var(--radius-sm); font-size: 9.5px; cursor: pointer; text-align: center; }
+    .health-phase-btn.active { background: rgba(29, 112, 245, 0.15); border-color: var(--sim-blue); color: #fff; }
+    .health-phase-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .health-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 8px; }
+    .health-chip { display: flex; align-items: center; gap: 5px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: var(--radius-sm); padding: 3px 6px; font-size: 9.5px; }
+    .health-chip .led { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .health-chip.nominal { border-top: 2px solid var(--status-nominal); }
+    .health-chip.warn { border-top: 2px solid var(--status-warning); }
+    .health-chip.crit { border-top: 2px solid var(--status-critical); }
+    .health-chip.idle { border-top: 2px solid var(--status-idle); }
+    .health-guidance { margin: 6px 8px; padding: 6px 8px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: var(--radius-md); font-size: 10px; line-height: 1.45; color: var(--text-secondary); }
+    .health-guidance b { color: var(--text-primary); }
+    .health-export { margin: 6px 8px; }
+    .health-nodata { font-size: 10px; color: var(--text-muted); text-align: center; padding: 8px; }
+
+    .spark-wrap { margin: 6px 8px; font-size: 9.5px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
+    .spark-name { display: flex; justify-content: space-between; }
+    canvas.spark { width: 100%; height: 28px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: 2px; }
+
+    .nasa-refs { margin-top: 6px; border-top: 1px solid var(--border-panel); padding-top: 6px; }
+    .nasa-refs .tree-node-header { font-size: 9.5px; padding: 3px 6px; }
+    .ref-item { font-size: 9px; color: var(--text-muted); padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.03); line-height: 1.3; }
+    .ref-item b { color: var(--text-primary); }
   </style>
 </head>
 <body>
@@ -207,6 +238,17 @@
         <button class="tool-btn active" id="btn-probes" onclick="toggleSensorProbes()" title="Toggle Live Sensor Probes">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg><span>Probes</span>
         </button>
+        <div class="ribbon-divider"></div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:10px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace;">
+          <span>MISSION PHASE</span>
+          <select id="phase-select" onchange="setMissionPhase(this.value)" style="background:var(--bg-input); border:1px solid var(--border-panel); color:var(--text-primary); padding:2px 6px; border-radius:var(--radius-sm); font-size:10px; font-family:'JetBrains Mono',monospace;">
+            <option value="docked">Docked / ISS</option>
+            <option value="transit">Deep-Space Transit</option>
+            <option value="eva">EVA (Spacewalk)</option>
+            <option value="launch">Launch / Ascent</option>
+            <option value="landing">Landing / Descent</option>
+          </select>
+        </div>
         <div class="ribbon-divider"></div>
         <input type="file" id="glb-input" accept=".glb,.gltf" style="display:none">
         <button class="tool-btn" onclick="document.getElementById('glb-input').click()" title="Import local .GLB / .GLTF geometry">
@@ -320,6 +362,55 @@
     </div>
   </aside>
 
+  <!-- RIGHT DOCK: HEALTH ASSESSMENT (NEW) -->
+  <aside class="wb-panel" id="panel-health" style="bottom: 12px; right: 12px; top: auto; width: 340px;">
+    <div class="wb-panel-header" data-drag="panel-health">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Astronaut Health Assessment</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-health')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body" style="gap:6px;">
+      <div class="health-score">
+        <div class="health-sub">COMPOSITE HEALTH SCORE (NASA Standard Measures)</div>
+        <div class="health-big">
+          <span class="health-num" id="health-num">--</span>
+          <span class="health-grade" id="health-grade">--</span>
+        </div>
+        <div class="health-sub" id="health-sub">Awaiting ESP32 data</div>
+      </div>
+      <div class="health-phase-row">
+        <button class="health-phase-btn" onclick="setMissionPhase('docked')">Docked</button>
+        <button class="health-phase-btn" onclick="setMissionPhase('transit')">Transit</button>
+        <button class="health-phase-btn" onclick="setMissionPhase('eva')">EVA</button>
+        <button class="health-phase-btn" onclick="setMissionPhase('launch')">Launch</button>
+        <button class="health-phase-btn" onclick="setMissionPhase('landing')">Landing</button>
+      </div>
+      <div id="health-chips" class="health-chips"></div>
+      <div class="spark-wrap" id="health-sparks"></div>
+      <div class="health-guidance" id="health-guidance">Connect ESP32 to begin health assessment.</div>
+      <div class="health-export">
+        <button class="sim-btn" onclick="exportHealthReport()" style="width:100%;">Export Medical Report</button>
+      </div>
+      <div class="nasa-refs">
+        <div class="tree-node-header" onclick="this.parentElement.classList.toggle('folded')">
+          <span>▾ NASA Research References (Spaceline #1224)</span>
+        </div>
+        <div class="tree-children">
+          <div class="ref-item"><b>Immune Biomarkers:</b> stress hormones, viruses, cells affected by flight — NASA HRP. <a href="https://www.nasa.gov/reference/immune-biomarkers/" style="color:#60a5fa" target="_blank">nasa.gov</a></div>
+          <div class="ref-item"><b>Herpesvirus reactivation:</b> Valacyclovir reduces inflammation/IgG — Front Immunol 2026 (NASA HRP grant 80JSC017N0001).</div>
+          <div class="ref-item"><b>Circadian misalignment:</b> adverse health consequences — Curr Sleep Med Rep 2026 (NASA Space Biology).</div>
+          <div class="ref-item"><b>Mental health:</b> anxiety/depression in microgravity, NIR tPBM — J Photochem Photobiol B 2026.</div>
+          <div class="ref-item"><b>Cardiac electrophysiology:</b> autonomic remodeling, arrhythmogenesis — Heart Rhythm 2026.</div>
+          <div class="ref-item"><b>Cardiovascular / arterial:</b> radial artery signal, head-down bedrest — Front Physiol 2026.</div>
+          <div class="ref-item"><b>Microbial dynamics:</b> commercial spaceflights, ISS — iScience 2026 (TRISH NNX16AO69A).</div>
+          <div class="ref-item"><b>Motor control:</b> gravitational loading, parabolic flight — PNAS 2026.</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
   <!-- BOTTOM DOCK -->
   <section class="wb-panel" id="panel-telemetry" style="bottom: 12px; left: 50%; transform: translateX(-50%); width: 600px; max-width: calc(100vw - 760px);">
     <div class="wb-panel-header" data-drag="panel-telemetry">
@@ -349,19 +440,32 @@
 
   <script>
     // =========================================================================
-    // 1. LIVE CHANNELS (ONLY REAL ESP32 DATA - NOTHING IS SIMULATED)
+    // 1. LIVE CHANNELS (REAL ESP32 DATA + NASA Standard Measures indicators)
+    //    Space Apps 2026 challenge indicators: blood pressure, heart rate,
+    //    blood sugar, body temperature, sleep, mood (+ SpO2, radiation, immune).
     // =========================================================================
     const CH = {
-      hr:     { name: 'Heart Rate (Pulse Sensor)',     unit: 'BPM', min: 40, max: 180, dec: 0, color: '#ef4444', warn: v => v > 120 || v < 45 },
-      temp:   { name: 'Air Temperature (DHT11)',       unit: '°C',  min: 0,  max: 50,  dec: 1, color: '#f59e0b', warn: v => v > 40 },
-      hum:    { name: 'Relative Humidity (DHT11)',     unit: '%',   min: 0,  max: 100, dec: 0, color: '#38bdf8', warn: v => v > 85 },
-      motion: { name: 'Acceleration (MPU6050)',        unit: 'g',   min: 0,  max: 3,   dec: 2, color: '#1d70f5', warn: v => v > 2.5 },
-      gyro:   { name: 'Rotation Rate (MPU6050)',       unit: '°/s', min: 0,  max: 500, dec: 0, color: '#a78bfa', warn: v => false },
-      tilt:   { name: 'Tilt From Vertical (MPU6050)',  unit: '°',   min: 0,  max: 180, dec: 0, color: '#22d3ee', warn: v => false },
-      m0:     { name: 'Left Arm Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
-      m1:     { name: 'Right Arm Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
-      m2:     { name: 'Left Leg Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 },
-      m3:     { name: 'Right Leg Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1 }
+      hr:     { name: 'Heart Rate (Pulse Sensor)',     unit: 'BPM', min: 40, max: 180, dec: 0, color: '#ef4444', warn: v => v > 120 || v < 45,  w: 1.15 },
+      temp:   { name: 'Air Temperature (DHT11)',       unit: '°C',  min: 0,  max: 50,  dec: 1, color: '#f59e0b', warn: v => v > 40,          w: 0.6 },
+      hum:    { name: 'Relative Humidity (DHT11)',     unit: '%',   min: 0,  max: 100, dec: 0, color: '#38bdf8', warn: v => v > 85,          w: 0.5 },
+      motion: { name: 'Acceleration (MPU6050)',        unit: 'g',   min: 0,  max: 3,   dec: 2, color: '#1d70f5', warn: v => v > 2.5,         w: 0.8 },
+      gyro:   { name: 'Rotation Rate (MPU6050)',       unit: '°/s', min: 0,  max: 500, dec: 0, color: '#a78bfa', warn: v => false,           w: 0.4 },
+      tilt:   { name: 'Tilt From Vertical (MPU6050)',  unit: '°',   min: 0,  max: 180, dec: 0, color: '#22d3ee', warn: v => false,           w: 0.4 },
+      m0:     { name: 'Left Arm Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1, w: 0.5 },
+      m1:     { name: 'Right Arm Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1, w: 0.5 },
+      m2:     { name: 'Left Leg Muscle (Touch)',       unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1, w: 0.5 },
+      m3:     { name: 'Right Leg Muscle (Touch)',      unit: '%',   min: 0,  max: 100, dec: 0, color: '#10b981', warn: v => false, touch: 1, w: 0.5 },
+      // ---- NASA Standard Measures / Space Apps indicators ----
+      bp_s:   { name: 'Blood Pressure - Systolic',     unit: 'mmHg',min: 70, max: 220, dec: 0, color: '#ef4444', warn: v => v > 140 || v < 90,  w: 1.25 },
+      bp_d:   { name: 'Blood Pressure - Diastolic',    unit: 'mmHg',min: 40, max: 140, dec: 0, color: '#ef4444', warn: v => v > 90  || v < 60,  w: 1.1 },
+      glucose:{ name: 'Blood Glucose',                 unit: 'mg/dL',min: 40, max: 450,dec: 0, color: '#f59e0b', warn: v => v > 180 || v < 70, w: 1.1 },
+      spo2:   { name: 'Blood Oxygen (SpO2)',           unit: '%',   min: 70, max: 100, dec: 0, color: '#10b981', warn: v => v < 92,            w: 1.3 },
+      resp:   { name: 'Respiratory Rate',              unit: '/min',min: 6,  max: 50,  dec: 0, color: '#38bdf8', warn: v => v > 22 || v < 10,  w: 0.9 },
+      radiation:{ name: 'Radiation Dose Rate',         unit: 'µSv/h',min: 0, max: 2000,dec: 1, color: '#a78bfa', warn: v => v > 500,           w: 1.2 },
+      immune: { name: 'Immune / Inflammation',         unit: 'AU',  min: 0,  max: 100, dec: 0, color: '#22d3ee', warn: v => v > 70,            w: 1.15 },
+      sleep:  { name: 'Sleep Quality Score',           unit: '/100',min: 0,  max: 100, dec: 0, color: '#60a5fa', warn: v => v < 60,            w: 1.0 },
+      mental: { name: 'Mental Health Score',           unit: '/100',min: 0,  max: 100, dec: 0, color: '#a78bfa', warn: v => v < 50,            w: 1.0 },
+      co2:    { name: 'Cabin CO2',                     unit: 'mmHg',min: 0,  max: 15,  dec: 2, color: '#f59e0b', warn: v => v > 4,           w: 0.7 }
     };
     const HIST_LEN = 150;
     const hist = {}; Object.keys(CH).forEach(k => hist[k] = []);
@@ -376,8 +480,8 @@
     function fmt(k, v) { return v === null ? '--' : v.toFixed(CH[k].dec); }
     function chStatus(k) {
       const v = val(k);
-      if (v === null) return 'nodata';
-      return CH[k].warn(v) ? 'alert' : 'ok';
+      if (v === null) return 'idle';
+      return CH[k].warn(v) ? 'crit' : 'nominal';
     }
 
     // =========================================================================
@@ -397,6 +501,26 @@
       { id: 'right_leg',   name: 'Right Lower Torso & Boot',   code: 'RLT-11', normal: [-0.55, -0.4, 0.3],ch: ['m3'],           desc: 'Right leg muscle activity: capacitive touch pad detecting skin contact.' }
     ];
     const regionStatus = r => chStatus(r.ch[0]);
+
+    // =========================================================================
+    // 2b. MISSION PHASES (weights the composite health score per phase)
+    // =========================================================================
+    const PHASES = {
+      docked:   { name: 'Docked / ISS',               base: { hr:1.0, bp_s:1.0, bp_d:1.0, spo2:1.0, glucose:1.0, resp:1.0, radiation:0.9, immune:1.0, sleep:1.0, mental:1.0, co2:1.0, temp:0.7, hum:0.6, motion:0.8, muscle:0.7 } },
+      transit:  { name: 'Deep-Space Transit',         base: { hr:1.0, bp_s:1.0, bp_d:1.0, spo2:1.0, glucose:1.0, resp:1.0, radiation:2.0, immune:1.5, sleep:1.5, mental:1.5, co2:1.1, temp:0.7, hum:0.6, motion:0.6, muscle:0.8 } },
+      eva:      { name: 'EVA (Spacewalk)',            base: { hr:1.3, bp_s:1.2, bp_d:1.1, spo2:1.6, glucose:1.0, resp:1.3, radiation:1.8, immune:0.9, sleep:0.7, mental:0.8, co2:1.3, temp:1.5, hum:0.8, motion:2.0, muscle:1.3 } },
+      launch:   { name: 'Launch / Ascent',            base: { hr:1.6, bp_s:1.5, bp_d:1.4, spo2:1.2, glucose:1.1, resp:1.6, radiation:0.6, immune:0.7, sleep:0.5, mental:1.2, co2:1.2, temp:0.8, hum:0.6, motion:1.4, muscle:1.2 } },
+      landing:  { name: 'Landing / Descent',          base: { hr:1.5, bp_s:1.4, bp_d:1.3, spo2:1.1, glucose:1.0, resp:1.4, radiation:0.5, immune:0.8, sleep:0.6, mental:1.1, co2:1.0, temp:0.8, hum:0.6, motion:1.5, muscle:1.1 } }
+    };
+    let missionPhase = 'docked';
+
+    function setMissionPhase(p) {
+      if (!PHASES[p]) return;
+      missionPhase = p;
+      document.getElementById('phase-select').value = p;
+      const els = document.querySelectorAll('.health-phase-btn');
+      els.forEach(e => { e.classList.toggle('active', e.textContent.trim().toLowerCase().startsWith(p.slice(0,3)) || (p==='docked' && e.textContent.trim()==='Docked') || (p==='transit' && e.textContent.trim()==='Transit') || (p==='eva' && e.textContent.trim()==='EVA') || (p==='launch' && e.textContent.trim()==='Launch') || (p==='landing' && e.textContent.trim()==='Landing')); });
+    }
 
     // =========================================================================
     // 3. BLUETOOTH (WEB BLUETOOTH, ESP32 BLE NOTIFY STREAM)
@@ -465,7 +589,7 @@
       }
       if (rxBuf.length > 400) rxBuf = '';
     }
-    // line: hr,p1;p2;p3;p4;p5,temp,hum,ax,ay,az,gx,gy,gz,m0,m1,m2,m3
+    // line: hr,p1;p2;p3;p4;p5,temp,hum,ax,ay,az,gx,gy,gz,m0,m1,m2,m3[,bp_s,bp_d,glucose,spo2,resp,radiation,immune,sleep,mental,co2]
     function parseLine(line) {
       const f = line.split(',');
       if (f.length < 14) return;
@@ -478,6 +602,19 @@
       } else { live.motion = null; live.tilt = null; }
       live.gyro = [gx, gy, gz].every(v => v !== null) ? Math.sqrt(gx * gx + gy * gy + gz * gz) : null;
       for (let i = 0; i < 4; i++) live['m' + i] = n(f[10 + i]);
+      // optional NASA-standard measures (only if ESP32 streams them)
+      if (f.length > 14) {
+        live.bp_s   = n(f[14]);
+        live.bp_d   = n(f[15]);
+        live.glucose= n(f[16]);
+        live.spo2   = n(f[17]);
+        live.resp   = n(f[18]);
+        live.radiation = n(f[19]);
+        live.immune = n(f[20]);
+        live.sleep  = n(f[21]);
+        live.mental = n(f[22]);
+        live.co2    = n(f[23]);
+      }
       live.t = Date.now();
       f[1].split(';').forEach(p => { const v = parseInt(p, 10); if (!isNaN(v)) pulseQueue.push(v); });
       if (pulseQueue.length > 200) pulseQueue.splice(0, pulseQueue.length - 200);
@@ -565,7 +702,7 @@
         probeMeshes.push(probe);
       });
     }
-    const PROBE_COL = { ok: 0x10b981, alert: 0xef4444, nodata: 0x4b5263 };
+    const PROBE_COL = { nominal: 0x10b981, crit: 0xef4444, idle: 0x4b5263 };
     function updateSensorProbePositions(elapsed) {
       if (!probesEnabled) return;
       probeMeshes.forEach(probe => {
@@ -585,7 +722,7 @@
     }
 
     // =========================================================================
-    // 6. TRIANGLE-SLICED REAL 3D ASTRONAUT DISSECTION ENGINE (UNCHANGED)
+    // 6. TRIANGLE-SLICED REAL 3D ASTRONAUT DISSECTION ENGINE
     // =========================================================================
     const astronautRoot = new THREE.Group();
     scene.add(astronautRoot);
@@ -944,7 +1081,144 @@
     function toggleAutoRotate(v) { autoRotate = v; }
 
     // =========================================================================
-    // 9. GRAPHICAL RENDERING: BIG DATA SCREEN, BOTTOM DOCK, WAVEFORM
+    // 9. HEALTH ASSESSMENT ENGINE (composite score + NASA-referenced guidance)
+    // =========================================================================
+    function channelSubscore(k) {
+      const v = val(k);
+      if (v === null) return null;
+      const c = CH[k];
+      // normalized position 0..1 within [min, max], clamped
+      let t = (v - c.min) / (c.max - c.min);
+      t = Math.max(0, Math.min(1, t));
+      // ideal band = middle 50% of range => subscore 100 there, fall off toward edges
+      let score;
+      if (t < 0.25) score = t / 0.25 * 100;            // rising edge
+      else if (t <= 0.75) score = 100;                 // ideal band
+      else score = (1 - (t - 0.75) / 0.25) * 100;      // falling edge
+      // warn zone penalizes heavily
+      if (c.warn && c.warn(v)) score *= 0.5;
+      return score;
+    }
+
+    function computeHealthScore() {
+      const phase = PHASES[missionPhase];
+      let totalW = 0, totalS = 0, nValid = 0;
+      const subscores = {};
+      Object.keys(CH).forEach(k => {
+        const s = channelSubscore(k);
+        subscores[k] = s;
+        if (s !== null) {
+          const w = (phase.base && phase.base[k] !== undefined ? phase.base[k] : CH[k].w || 1.0);
+          totalS += s * w; totalW += w; nValid++;
+        }
+      });
+      const score = nValid === 0 ? null : Math.round(totalS / totalW);
+      return { score, nValid, subscores };
+    }
+
+    function gradeLabel(score) {
+      if (score === null) return { t: 'NO DATA', c: 'idle' };
+      if (score >= 85) return { t: 'NOMINAL', c: 'nominal' };
+      if (score >= 65) return { t: 'CAUTION', c: 'warn' };
+      return { t: 'CRITICAL', c: 'crit' };
+    }
+
+    function statusColor(st) {
+      const map = { nominal: 0x10b981, warn: 0xf59e0b, crit: 0xef4444, idle: 0x4b5263 };
+      return map[st] || 0x4b5263;
+    }
+
+    function buildGuidance() {
+      const g = computeHealthScore();
+      const recs = [];
+      const add = (cond, text, ref) => { if (cond) recs.push(ref ? text + ' <b style="color:#60a5fa;font-size:9px">[' + ref + ']</b>' : text); };
+      const hr = val('hr'), spo2 = val('spo2'), bps = val('bp_s'), bpd = val('bp_d');
+      const glu = val('glucose'), imm = val('immune'), slp = val('sleep'), men = val('mental');
+      const rad = val('radiation'), co2 = val('co2'), tmp = val('temp'), mot = val('motion');
+
+      // Cardiovascular (NASA: cardiac electrophysiology Heart Rhythm 2026; arterial/radial Front Physiol 2026)
+      add((bps !== null && bps > 140) || (hr !== null && hr > 120),
+        'Elevated cardiovascular load: initiate exercise countermeasures, monitor arterial tonometry.', 'Heart Rhythm 2026 / Front Physiol 2026');
+      add((bpd !== null && bpd > 90), 'Diastolic hypertension: reduce exertion, hydrate, recheck in 5 min.', 'Front Physiol 2026');
+      // Hypoxia / SpO2
+      add(spo2 !== null && spo2 < 92, 'Hypoxia risk: increase cabin O2 fraction, verify suit/cabin pressure integrity.', 'NASA Human Body in Space');
+      // Glucose
+      add(glu !== null && glu > 180, 'Hyperglycemia: nutrition/insulin protocol per flight surgeon.', 'NASA Standard Measures');
+      add(glu !== null && glu < 70, 'Hypoglycemia: fast carbohydrate intake.', 'NASA Standard Measures');
+      // Immune / viral reactivation (NASA HRP Front Immunol 2026 valacyclovir)
+      add(imm !== null && imm > 70, 'Immune activation / viral reactivation risk (herpesvirus): consider antiviral prophylaxis.', 'Front Immunol 2026 (NASA HRP)');
+      // Sleep / circadian (NASA Curr Sleep Med Rep 2026)
+      add(slp !== null && slp < 60, 'Circadian misalignment: enforce scheduled sleep, tunable lighting countermeasure.', 'Curr Sleep Med Rep 2026 (NASA)');
+      // Mental health (NASA J Photochem 2026 tPBM)
+      add(men !== null && men < 50, 'Psychological strain: near-infrared tPBM + crew support / counseling.', 'J Photochem Photobiol B 2026');
+      // Radiation
+      add(rad !== null && rad > 500, 'Elevated radiation dose rate: seek shielding / shelter, limit EVA duration.', 'NASA HRP');
+      // Cabin CO2
+      add(co2 !== null && co2 > 4, 'Cabin CO2 elevated: increase ventilation rate.', 'NASA ECLSS');
+      // Thermal
+      add(tmp !== null && tmp > 40, 'Thermal stress: activate cooling, reduce metabolic load.', 'NASA');
+      // Motion / exertion (EVA)
+      add(mot !== null && mot > 2.5, 'High exertion: EVA workload above nominal, extend recovery period.', 'NASA');
+
+      if (recs.length === 0) {
+        if (g.score === null) recs.push('Awaiting ESP32 telemetry.');
+        else recs.push('All channels nominal — continue routine monitoring.');
+      }
+      return recs;
+    }
+
+    function renderHealthPanel() {
+      const g = computeHealthScore();
+      const grade = gradeLabel(g.score);
+      const numEl = document.getElementById('health-num');
+      const grdEl = document.getElementById('health-grade');
+      const subEl = document.getElementById('health-sub');
+      if (g.score === null) {
+        numEl.textContent = '--'; grdEl.textContent = '--';
+        grdEl.style.color = 'var(--text-muted)';
+        subEl.textContent = 'Awaiting ESP32 telemetry';
+      } else {
+        numEl.textContent = g.score;
+        grdEl.textContent = grade.t;
+        grdEl.style.color = grade.c === 'nominal' ? 'var(--status-nominal)' : grade.c === 'warn' ? 'var(--status-warning)' : 'var(--status-critical)';
+        subEl.textContent = PHASES[missionPhase].name + ' • ' + g.nValid + ' channel' + (g.nValid !== 1 ? 's' : '') + ' valid';
+      }
+
+      // phase button active states
+      const p = missionPhase;
+      document.querySelectorAll('.health-phase-btn').forEach(e => {
+        const label = e.textContent.trim();
+        let active = false;
+        if (p === 'docked' && label === 'Docked') active = true;
+        if (p === 'transit' && label === 'Transit') active = true;
+        if (p === 'eva' && label === 'EVA') active = true;
+        if (p === 'launch' && label === 'Launch') active = true;
+        if (p === 'landing' && label === 'Landing') active = true;
+        e.classList.toggle('active', active);
+      });
+
+      // status chips
+      const chips = document.getElementById('health-chips');
+      const order = ['hr', 'bp_s', 'bp_d', 'spo2', 'glucose', 'resp', 'radiation', 'immune', 'sleep', 'mental', 'co2', 'temp', 'hum', 'motion'];
+      chips.innerHTML = '';
+      order.forEach(k => {
+        const st = chStatus(k);
+        const chip = document.createElement('div');
+        chip.className = 'health-chip ' + st;
+        const led = document.createElement('span'); led.className = 'led'; led.style.background = st === 'nominal' ? 'var(--status-nominal)' : st === 'warn' ? 'var(--status-warning)' : st === 'crit' ? 'var(--status-critical)' : 'var(--status-idle)';
+        const nm = document.createElement('span'); nm.textContent = CH[k].name;
+        const vl = document.createElement('span'); vl.style.fontFamily = "'JetBrains Mono',monospace"; vl.style.fontSize = '9px'; vl.textContent = val(k) === null ? '--' : fmt(k, val(k)) + ' ' + CH[k].unit;
+        chip.appendChild(led); chip.appendChild(nm); chip.appendChild(vl);
+        chips.appendChild(chip);
+      });
+
+      // guidance
+      const recs = buildGuidance();
+      document.getElementById('health-guidance').innerHTML = recs.map(r => '• ' + r).join('<br>');
+    }
+
+    // =========================================================================
+    // 10. GRAPHICAL RENDERING: BIG DATA SCREEN, BOTTOM DOCK, WAVEFORM
     // =========================================================================
     function drawGraph(canvas, series, ch) {
       const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
@@ -989,11 +1263,11 @@
       document.getElementById('big-label').textContent = ch.name;
       const num = document.getElementById('big-num');
       num.textContent = fmt(k, v);
-      num.style.color = st === 'alert' ? 'var(--status-critical)' : st === 'nodata' ? 'var(--text-muted)' : ch.color;
+      num.style.color = st === 'crit' ? 'var(--status-critical)' : st === 'idle' ? 'var(--text-muted)' : ch.color;
       document.getElementById('big-unit').textContent = ch.unit;
       const stEl = document.getElementById('big-state');
-      stEl.textContent = st === 'nodata' ? 'NO DATA' : st === 'alert' ? 'ALERT' : (ch.touch ? (v > 20 ? 'TOUCH DETECTED' : 'NO CONTACT') : 'LIVE');
-      stEl.style.color = st === 'alert' ? 'var(--status-critical)' : st === 'nodata' ? 'var(--text-muted)' : 'var(--status-nominal)';
+      stEl.textContent = st === 'idle' ? 'NO DATA' : st === 'crit' ? 'ALERT' : (ch.touch ? (v > 20 ? 'TOUCH DETECTED' : 'NO CONTACT') : 'LIVE');
+      stEl.style.color = st === 'crit' ? 'var(--status-critical)' : st === 'idle' ? 'var(--text-muted)' : 'var(--status-nominal)';
       drawGraph(document.getElementById('big-canvas'), hist[k], ch);
       const bars = document.getElementById('big-bars');
       if (bars.dataset.key !== r.id) {
@@ -1032,7 +1306,7 @@
         const led = document.getElementById(`led-${r.id}`);
         if (!led) return;
         const st = regionStatus(r);
-        led.className = 'status-led ' + (st === 'nodata' ? 'idle' : st === 'alert' ? 'critical' : '');
+        led.className = 'status-led ' + (st === 'idle' ? 'idle' : st === 'crit' ? 'critical' : '');
       });
       document.getElementById('met-clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
       if (bleState === 'LIVE' && live.t && Date.now() - live.t > STALE_MS) {
@@ -1044,7 +1318,12 @@
       }
     }
 
-    function renderAll() { renderBottom(); renderBig(); renderStatus(); }
+    function renderAll() {
+      renderBottom();
+      renderBig();
+      renderStatus();
+      renderHealthPanel();
+    }
     setInterval(renderAll, 200);
 
     // Real pulse waveform (raw ADC samples streamed from the ESP32 at 50 Hz)
@@ -1082,7 +1361,48 @@
     }
 
     // =========================================================================
-    // 10. DRAGGABLE & COLLAPSIBLE DOCKS
+    // 11. MEDICAL REPORT EXPORT
+    // =========================================================================
+    function exportHealthReport() {
+      const g = computeHealthScore();
+      const lines = [];
+      lines.push('EVA-SUIT-REV4 — Astronaut Health Medical Report');
+      lines.push('Generated: ' + new Date().toISOString());
+      lines.push('Mission Phase: ' + PHASES[missionPhase].name);
+      lines.push('Composite Health Score: ' + (g.score === null ? 'NO DATA' : g.score + ' / 100 (' + gradeLabel(g.score).t + ')'));
+      lines.push('Valid Channels: ' + g.nValid);
+      lines.push('');
+      lines.push('Channel Readings:');
+      Object.keys(CH).forEach(k => {
+        const v = val(k);
+        lines.push('  ' + CH[k].name + ': ' + (v === null ? 'NO DATA' : v.toFixed(CH[k].dec) + ' ' + CH[k].unit) + ' [' + chStatus(k) + ']');
+      });
+      lines.push('');
+      lines.push('Guidance / Treatment Recommendations:');
+      buildGuidance().forEach(r => lines.push('  - ' + r.replace(/<b[^>]*>(.*?)<\/b>/, '$1').replace(/<[^>]+>/g, '')));
+      lines.push('');
+      lines.push('NASA Research References (Spaceline #1224, Nov 13 2026):');
+      lines.push('  - Immune Biomarkers: nasa.gov/reference/immune-biomarkers/');
+      lines.push('  - Herpesvirus reactivation / Valacyclovir: Front Immunol 2026 (NASA HRP 80JSC017N0001)');
+      lines.push('  - Circadian misalignment: Curr Sleep Med Rep 2026 (NASA Space Biology)');
+      lines.push('  - Mental health / NIR tPBM: J Photochem Photobiol B 2026');
+      lines.push('  - Cardiac electrophysiology: Heart Rhythm 2026');
+      lines.push('  - Cardiovascular / arterial: Front Physiol 2026');
+      lines.push('  - Microbial dynamics / ISS: iScience 2026 (TRISH NNX16AO69A)');
+      lines.push('  - Motor control / parabolic flight: PNAS 2026');
+      lines.push('');
+      lines.push('NOTE: Only real ESP32 telemetry is used. "--" = no live data.');
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'EVA-SUIT-REV4_Health_Report_' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('Medical report exported.');
+    }
+
+    // =========================================================================
+    // 12. DRAGGABLE & COLLAPSIBLE DOCKS
     // =========================================================================
     function togglePanel(id) { document.getElementById(id).classList.toggle('collapsed'); }
 
@@ -1095,6 +1415,8 @@
       cam.style.top = '560px'; cam.style.right = '12px'; cam.style.left = 'auto'; cam.classList.remove('collapsed');
       const tel = document.getElementById('panel-telemetry');
       tel.style.bottom = '12px'; tel.style.top = 'auto'; tel.style.left = '50%'; tel.style.transform = 'translateX(-50%)'; tel.classList.remove('collapsed');
+      const hl = document.getElementById('panel-health');
+      hl.style.bottom = '12px'; hl.style.right = '12px'; hl.style.top = 'auto'; hl.classList.remove('collapsed');
       restoreAllParts();
       setCameraView('reset');
     }
@@ -1103,7 +1425,7 @@
     let dragOffset = { x: 0, y: 0 };
     document.querySelectorAll('.wb-panel-header[data-drag]').forEach(header => {
       header.addEventListener('pointerdown', (e) => {
-        if (e.target.tagName === 'BUTTON') return;
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
         dragTarget = document.getElementById(header.getAttribute('data-drag'));
         const rect = dragTarget.getBoundingClientRect();
         dragTarget.style.transform = 'none';
@@ -1120,7 +1442,7 @@
     window.addEventListener('pointerup', () => { dragTarget = null; });
 
     // =========================================================================
-    // 11. RENDER LOOP
+    // 13. RENDER LOOP
     // =========================================================================
     const clock = new THREE.Clock();
     function animate() {
