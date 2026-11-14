@@ -190,6 +190,16 @@
     .health-export { margin: 6px 8px; }
     .health-nodata { font-size: 10px; color: var(--text-muted); text-align: center; padding: 8px; }
 
+    /* Emergency checklist */
+    .emerg-item { display: flex; align-items: flex-start; gap: 6px; font-size: 9.5px; line-height: 1.35; padding: 4px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-panel); background: var(--bg-input); margin-bottom: 3px; }
+    .emerg-item.crit { border-left: 3px solid var(--status-critical); }
+    .emerg-item.warn { border-left: 3px solid var(--status-warning); }
+    .emerg-item.nominal { border-left: 3px solid var(--status-nominal); }
+    .emerg-led { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+    .emerg-text { flex: 1; color: var(--text-secondary); }
+    .emerg-text b { color: var(--text-primary); }
+    .emerg-ref { font-size: 8px; color: #60a5fa; margin-top: 1px; }
+
     .spark-wrap { margin: 6px 8px; font-size: 9.5px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
     .spark-name { display: flex; justify-content: space-between; }
     canvas.spark { width: 100%; height: 28px; background: var(--bg-input); border: 1px solid var(--border-panel); border-radius: 2px; }
@@ -432,6 +442,26 @@
     </div>
   </section>
 
+  <!-- RIGHT DOCK: EMERGENCY CHECKLIST (NEW) -->
+  <aside class="wb-panel" id="panel-emergency" style="bottom: 12px; right: 360px; top: auto; width: 320px;">
+    <div class="wb-panel-header" data-drag="panel-emergency">
+      <div class="wb-panel-title">
+        <svg viewBox="0 0 24 24"><path d="M21 12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9zM13 21v-2a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2z"/></svg>
+        <span>Emergency Checklist</span>
+      </div>
+      <div class="wb-panel-actions"><button class="wb-icon-btn" onclick="togglePanel('panel-emergency')" title="Collapse Dock">−</button></div>
+    </div>
+    <div class="wb-panel-body" style="gap:6px;">
+      <div class="health-sub">EMERGENCY PROCEDURES (NASA EVA / MEDICAL)</div>
+      <div id="emergency-list" style="display:flex; flex-direction:column; gap:5px; max-height:200px; overflow-y:auto;"></div>
+      <div class="health-sub" style="font-size:9px;">CUMULATIVE RADIATION</div>
+      <div id="rad-dose" style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary);">-- µSv</div>
+      <div class="health-export">
+        <button class="sim-btn" onclick="exportHealthReport()" style="width:100%;">Export Medical Report</button>
+      </div>
+    </div>
+  </aside>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -465,12 +495,63 @@
       immune: { name: 'Immune / Inflammation',         unit: 'AU',  min: 0,  max: 100, dec: 0, color: '#22d3ee', warn: v => v > 70,            w: 1.15 },
       sleep:  { name: 'Sleep Quality Score',           unit: '/100',min: 0,  max: 100, dec: 0, color: '#60a5fa', warn: v => v < 60,            w: 1.0 },
       mental: { name: 'Mental Health Score',           unit: '/100',min: 0,  max: 100, dec: 0, color: '#a78bfa', warn: v => v < 50,            w: 1.0 },
-      co2:    { name: 'Cabin CO2',                     unit: 'mmHg',min: 0,  max: 15,  dec: 2, color: '#f59e0b', warn: v => v > 4,           w: 0.7 }
+      co2:    { name: 'Cabin CO2',                     unit: 'mmHg',min: 0,  max: 15,  dec: 2, color: '#f59e0b', warn: v => v > 4,           w: 0.7 },
+      // ---- EVA Suit Telemetry (PLSS / EMU) ----
+      suit_press:{ name: 'Suit Pressure',              unit: 'psi',   min: 0,  max: 12,  dec: 1, color: '#1d70f5', warn: v => v < 3.5 || v > 6.5, w: 1.3 },
+      o2_pct:   { name: 'Suit O2 Percentage',          unit: '%',    min: 0,  max: 105, dec: 0, color: '#10b981', warn: v => v < 90 || v > 100, w: 1.4 },
+      scrubber: { name: 'CO2 Scrubber Status',         unit: '%',    min: 0,  max: 100, dec: 0, color: '#f59e0b', warn: v => v < 20,           w: 1.2 },
+      battery:  { name: 'Suit Battery',                unit: '%',    min: 0,  max: 100, dec: 0, color: '#60a5fa', warn: v => v < 15,           w: 1.1 },
+      suit_temp:{ name: 'Suit Interior Temp',          unit: '°C',   min: 0,  max: 50,  dec: 1, color: '#f59e0b', warn: v => v > 35 || v < 15,   w: 0.9 }
     };
     const HIST_LEN = 150;
     const hist = {}; Object.keys(CH).forEach(k => hist[k] = []);
     const live = { t: 0 };
     const STALE_MS = 3000;
+
+    // =========================================================================
+    // 1b. OFFLINE DATA PERSISTENCE (IndexedDB) — space missions have
+    // intermittent comms; cache readings locally and sync when link returns.
+    // =========================================================================
+    const DB_NAME = 'EVA-SUIT-REV4';
+    const DB_STORE = 'telemetry';
+    let idb = null;
+    function openIDB() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) { resolve(null); return; }
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            const store = db.createObjectStore(DB_STORE, { keyPath: 'id', autoIncrement: true });
+            store.createIndex('ts', 'ts', { unique: false });
+          }
+        };
+        req.onsuccess = () => { idb = req.result; resolve(idb); };
+        req.onerror = () => resolve(null);
+      });
+    }
+    function saveReading(sample) {
+      if (!idb) return;
+      const tx = idb.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).add({ ...sample, ts: Date.now() });
+      tx.oncomplete = () => {};
+    }
+    function loadRecentReadings(limit = 200) {
+      if (!idb) return Promise.resolve([]);
+      return new Promise((resolve) => {
+        const tx = idb.transaction(DB_STORE, 'readonly');
+        const store = tx.objectStore(DB_STORE);
+        const index = store.index('ts');
+        const req = index.openCursor(null, 'prev');
+        const out = [];
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor && out.length < limit) { out.push(cursor.value); cursor.continue(); }
+          else resolve(out);
+        };
+        req.onerror = () => resolve([]);
+      });
+    }
 
     function val(k) {
       if (!live.t || Date.now() - live.t > STALE_MS) return null;
@@ -520,6 +601,95 @@
       document.getElementById('phase-select').value = p;
       const els = document.querySelectorAll('.health-phase-btn');
       els.forEach(e => { e.classList.toggle('active', e.textContent.trim().toLowerCase().startsWith(p.slice(0,3)) || (p==='docked' && e.textContent.trim()==='Docked') || (p==='transit' && e.textContent.trim()==='Transit') || (p==='eva' && e.textContent.trim()==='EVA') || (p==='launch' && e.textContent.trim()==='Launch') || (p==='landing' && e.textContent.trim()==='Landing')); });
+    }
+
+    // =========================================================================
+    // 2c. EVA-SUITE HEALTH METRICS (DCS risk, cumulative radiation, countermeasures)
+    // =========================================================================
+    let cumulativeRadiation = 0;      // µSv, accumulated over mission
+    let lastRadiationTs = 0;          // for time-weighted accumulation
+    let evaStartTs = null;            // timestamp when EVA phase began
+    let dcsRiskCache = { level: 'nominal', score: 0, note: '' };
+
+    function updateCumulativeRadiation() {
+      const rate = val('radiation');
+      const now = Date.now();
+      if (rate !== null && lastRadiationTs > 0) {
+        const dtHours = (now - lastRadiationTs) / 3600000;
+        cumulativeRadiation += rate * dtHours;
+      }
+      lastRadiationTs = now;
+      // NASA career radiation limits (approx): 250-1000 mSv depending on age/gender
+      // Warning threshold: 500 mSv accumulated (conservative for mission)
+    }
+
+    function computeDCsrisk() {
+      // Decompression Sickness risk for EVA.
+      // Based on suit pressure, time at low pressure, and O2 pre-breathe status.
+      // NASA uses 4.3 psi suit pressure with pre-breathe to reduce DCS risk.
+      const press = val('suit_press');
+      const o2 = val('o2_pct');
+      const now = Date.now();
+      let score = 0;
+      let level = 'nominal';
+      let note = 'DCS risk nominal';
+
+      if (missionPhase !== 'eva') {
+        dcsRiskCache = { level: 'nominal', score: 0, note: 'Not in EVA' };
+        return;
+      }
+
+      if (evaStartTs === null) evaStartTs = now;
+      const evaHours = (now - evaStartTs) / 3600000;
+
+      // Low suit pressure increases DCS risk
+      if (press !== null) {
+        if (press < 3.5) score += 40;
+        else if (press < 4.3) score += 20;
+        else if (press < 5.0) score += 5;
+      }
+      // Longer EVA = higher risk
+      if (evaHours > 4) score += 20;
+      else if (evaHours > 2) score += 10;
+      // Low O2 percentage increases risk (less pre-breathe washout)
+      if (o2 !== null && o2 < 95) score += 15;
+
+      if (score >= 60) { level = 'critical'; note = 'HIGH DCS RISK — abort EVA, repressurize immediately'; }
+      else if (score >= 30) { level = 'warn'; note = 'Elevated DCS risk — consider pre-breathe O2'; }
+      else { note = 'DCS risk low'; }
+
+      dcsRiskCache = { level, score, note };
+    }
+
+    function computeCountermeasures() {
+      const cms = [];
+      const add = (cond, text) => { if (cond) cms.push(text); };
+      const hr = val('hr'), spo2 = val('spo2'), press = val('suit_press');
+      const o2 = val('o2_pct'), scrub = val('scrubber'), batt = val('battery');
+      const suitTmp = val('suit_temp'), co2c = val('co2'), rad = val('radiation');
+
+      // Suit emergencies (NASA EVA procedures)
+      add(press !== null && press < 3.5, 'SUIT PRESSURE CRITICAL — initiate emergency repressurization, abort EVA.');
+      add(o2 !== null && o2 < 85, 'OXYGEN DEPLETION — activate backup O2, terminate EVA immediately.');
+      add(scrub !== null && scrub < 20, 'CO2 SCRUBBER DEPLETED — high CO2 risk, return to airlock.');
+      add(batt !== null && batt < 15, 'BATTERY CRITICAL — suit systems may fail, abort EVA.');
+      add(suitTmp !== null && suitTmp > 35, 'SUIT OVERHEATING — engage cooling, reduce exertion.');
+      add(suitTmp !== null && suitTmp < 15, 'SUIT TOO COLD — activate heaters, reduce EVA duration.');
+
+      // Medical countermeasures (NASA HRP referenced)
+      add(hr !== null && hr > 120, 'Tachycardia — reduce exertion, hydrate, monitor ECG.');
+      add(hr !== null && hr < 45, 'Bradycardia — assess consciousness, atropine protocol if symptomatic.');
+      add(spo2 !== null && spo2 < 90, 'Hypoxemia — increase O2 fraction, check suit seal.');
+      add(co2c !== null && co2c > 4, 'Hypercapnia — increase ventilation, check scrubber.');
+      add(rad !== null && rad > 500, 'High radiation rate — seek shielding, minimize EVA time.');
+      add(cumulativeRadiation > 500, 'Cumulative radiation approaching limit — restrict further EVA.');
+
+      // Muscle/bone countermeasures (long-duration)
+      add(missionPhase === 'transit' && val('motion') !== null && val('motion') < 0.5, 'Low activity detected — prescribe resistive exercise (ARED) to counter bone/muscle atrophy.');
+      add(missionPhase === 'docked' && val('sleep') !== null && val('sleep') < 60, 'Sleep deficit — schedule rest, tunable lighting for circadian entrainment.');
+
+      if (cms.length === 0) cms.push('All systems nominal — continue routine monitoring.');
+      return cms;
     }
 
     // =========================================================================
@@ -589,7 +759,7 @@
       }
       if (rxBuf.length > 400) rxBuf = '';
     }
-    // line: hr,p1;p2;p3;p4;p5,temp,hum,ax,ay,az,gx,gy,gz,m0,m1,m2,m3[,bp_s,bp_d,glucose,spo2,resp,radiation,immune,sleep,mental,co2]
+    // line: hr,p1;p2;p3;p4;p5,temp,hum,ax,ay,az,gx,gy,gz,m0,m1,m2,m3[,bp_s,bp_d,glucose,spo2,resp,radiation,immune,sleep,mental,co2,suit_press,o2_pct,scrubber,battery,suit_temp]
     function parseLine(line) {
       const f = line.split(',');
       if (f.length < 14) return;
@@ -614,6 +784,12 @@
         live.sleep  = n(f[21]);
         live.mental = n(f[22]);
         live.co2    = n(f[23]);
+        // EVA suit telemetry
+        live.suit_press = n(f[24]);
+        live.o2_pct   = n(f[25]);
+        live.scrubber = n(f[26]);
+        live.battery  = n(f[27]);
+        live.suit_temp= n(f[28]);
       }
       live.t = Date.now();
       f[1].split(';').forEach(p => { const v = parseInt(p, 10); if (!isNaN(v)) pulseQueue.push(v); });
@@ -623,6 +799,11 @@
         hist[k].push(v === null || v === undefined || isNaN(v) ? null : v);
         if (hist[k].length > HIST_LEN) hist[k].shift();
       });
+      // persist to local IndexedDB for offline operation
+      const sample = {};
+      Object.keys(CH).forEach(k => { sample[k] = live[k]; });
+      sample.ts = live.t; sample.phase = missionPhase;
+      saveReading(sample);
     }
 
     // =========================================================================
@@ -1157,6 +1338,20 @@
       const hr = val('hr'), spo2 = val('spo2'), bps = val('bp_s'), bpd = val('bp_d');
       const glu = val('glucose'), imm = val('immune'), slp = val('sleep'), men = val('mental');
       const rad = val('radiation'), co2 = val('co2'), tmp = val('temp'), mot = val('motion');
+      const press = val('suit_press'), o2 = val('o2_pct'), scrub = val('scrubber'), batt = val('battery');
+      const suitTmp = val('suit_temp');
+
+      // ---- EVA Suit Emergencies (NASA EVA procedures) ----
+      add(press !== null && press < 3.5, 'SUIT PRESSURE CRITICAL — initiate emergency repressurization, abort EVA.');
+      add(o2 !== null && o2 < 85, 'OXYGEN DEPLETION — activate backup O2, terminate EVA immediately.');
+      add(scrub !== null && scrub < 20, 'CO2 SCRUBBER DEPLETED — high CO2 risk, return to airlock.');
+      add(batt !== null && batt < 15, 'BATTERY CRITICAL — suit systems may fail, abort EVA.');
+      add(suitTmp !== null && suitTmp > 35, 'SUIT OVERHEATING — engage cooling, reduce exertion.');
+      add(suitTmp !== null && suitTmp < 15, 'SUIT TOO COLD — activate heaters, reduce EVA duration.');
+
+      // ---- DCS Risk (NASA EVA decompression sickness protocol) ----
+      add(dcsRiskCache.level === 'crit', dcsRiskCache.note, 'NASA EVA DCS Protocol');
+      add(dcsRiskCache.level === 'warn', dcsRiskCache.note, 'NASA EVA DCS Protocol');
 
       // Cardiovascular (NASA: cardiac electrophysiology Heart Rhythm 2026; arterial/radial Front Physiol 2026)
       add((bps !== null && bps > 140) || (hr !== null && hr > 120),
@@ -1175,12 +1370,17 @@
       add(men !== null && men < 50, 'Psychological strain: near-infrared tPBM + crew support / counseling.', 'J Photochem Photobiol B 2026');
       // Radiation
       add(rad !== null && rad > 500, 'Elevated radiation dose rate: seek shielding / shelter, limit EVA duration.', 'NASA HRP');
+      add(cumulativeRadiation > 500, 'Cumulative radiation approaching mission limit — restrict further EVA.', 'NASA HRP');
       // Cabin CO2
       add(co2 !== null && co2 > 4, 'Cabin CO2 elevated: increase ventilation rate.', 'NASA ECLSS');
       // Thermal
       add(tmp !== null && tmp > 40, 'Thermal stress: activate cooling, reduce metabolic load.', 'NASA');
       // Motion / exertion (EVA)
       add(mot !== null && mot > 2.5, 'High exertion: EVA workload above nominal, extend recovery period.', 'NASA');
+
+      // Countermeasures
+      const cms = computeCountermeasures();
+      cms.forEach(c => recs.push(c));
 
       if (recs.length === 0) {
         if (g.score === null) recs.push('Awaiting ESP32 telemetry.');
@@ -1221,7 +1421,7 @@
 
       // status chips
       const chips = document.getElementById('health-chips');
-      const order = ['hr', 'bp_s', 'bp_d', 'spo2', 'glucose', 'resp', 'radiation', 'immune', 'sleep', 'mental', 'co2', 'temp', 'hum', 'motion'];
+      const order = ['hr', 'bp_s', 'bp_d', 'spo2', 'glucose', 'resp', 'radiation', 'immune', 'sleep', 'mental', 'co2', 'suit_press', 'o2_pct', 'scrubber', 'battery', 'suit_temp', 'temp', 'hum', 'motion'];
       chips.innerHTML = '';
       order.forEach(k => {
         const st = chStatus(k);
@@ -1234,9 +1434,73 @@
         chips.appendChild(chip);
       });
 
+      // DCS risk bar (EVA-specific)
+      const dcsWrap = document.createElement('div');
+      dcsWrap.className = 'spark-wrap';
+      dcsWrap.style.marginTop = '4px';
+      dcsWrap.innerHTML = '<div class="spark-name"><span>DCS RISK (EVA)</span><span id="dcs-score" style="font-family:JetBrains Mono,monospace;font-size:9px">--</span></div><canvas class="spark" id="dcs-canvas" width="300" height="12"></canvas>';
+      chips.parentNode.insertBefore(dcsWrap, chips.parentNode.children[chips.parentNode.children.length - 1]);
+
+      const dcsCanvas = document.getElementById('dcs-canvas');
+      const dcsCtx = dcsCanvas.getContext('2d');
+      dcsCanvas.width = 300; dcsCanvas.height = 12;
+      dcsCtx.clearRect(0, 0, 300, 12);
+      const dcsScore = dcsRiskCache.score;
+      const dcsCol = dcsRiskCache.level === 'crit' ? '#ef4444' : dcsRiskCache.level === 'warn' ? '#f59e0b' : '#10b981';
+      const fillW = (dcsScore / 100) * 300;
+      dcsCtx.fillStyle = dcsCol;
+      dcsCtx.fillRect(0, 0, fillW, 12);
+      document.getElementById('dcs-score').textContent = dcsScore + ' / 100 (' + dcsRiskCache.level + ')';
+
       // guidance
       const recs = buildGuidance();
       document.getElementById('health-guidance').innerHTML = recs.map(r => '• ' + r).join('<br>');
+    }
+
+    function renderEmergency() {
+      const list = document.getElementById('emergency-list');
+      if (!list) return;
+      const press = val('suit_press'), o2 = val('o2_pct'), scrub = val('scrubber');
+      const batt = val('battery'), suitTmp = val('suit_temp');
+      const rad = val('radiation');
+
+      const items = [];
+      const add = (level, text, ref) => {
+        items.push({ level, text, ref });
+      };
+
+      // Suit emergencies
+      add(press !== null && press < 3.5 ? 'crit' : press !== null && press < 4.3 ? 'warn' : 'nominal',
+        'Suit Pressure: ' + (press === null ? '--' : press.toFixed(1) + ' psi'), 'NASA EVA Procedure');
+      add(o2 !== null && o2 < 85 ? 'crit' : o2 !== null && o2 < 90 ? 'warn' : 'nominal',
+        'Suit O2: ' + (o2 === null ? '--' : o2.toFixed(0) + '%'), 'NASA EVA Procedure');
+      add(scrub !== null && scrub < 20 ? 'crit' : scrub !== null && scrub < 40 ? 'warn' : 'nominal',
+        'CO2 Scrubber: ' + (scrub === null ? '--' : scrub.toFixed(0) + '%'), 'NASA ECLSS');
+      add(batt !== null && batt < 15 ? 'crit' : batt !== null && batt < 30 ? 'warn' : 'nominal',
+        'Suit Battery: ' + (batt === null ? '--' : batt.toFixed(0) + '%'), 'NASA EVA Procedure');
+      add(suitTmp !== null && (suitTmp > 35 || suitTmp < 15) ? 'warn' : 'nominal',
+        'Suit Temp: ' + (suitTmp === null ? '--' : suitTmp.toFixed(1) + '°C'), 'NASA EVA Procedure');
+
+      // Radiation
+      add(rad !== null && rad > 1000 ? 'crit' : rad !== null && rad > 500 ? 'warn' : 'nominal',
+        'Radiation Rate: ' + (rad === null ? '--' : rad.toFixed(1) + ' µSv/h'), 'NASA HRP');
+
+      // DCS
+      add(dcsRiskCache.level === 'crit' ? 'crit' : dcsRiskCache.level === 'warn' ? 'warn' : 'nominal',
+        'DCS Risk: ' + dcsRiskCache.score + '/100 — ' + dcsRiskCache.note, 'NASA DCS Protocol');
+
+      list.innerHTML = items.map(it => {
+        const ledCol = it.level === 'crit' ? 'var(--status-critical)' : it.level === 'warn' ? 'var(--status-warning)' : 'var(--status-nominal)';
+        return '<div class="emerg-item ' + it.level + '"><span class="emerg-led" style="background:' + ledCol + '"></span><div class="emerg-text">' + it.text + '</div><div class="emerg-ref">' + it.ref + '</div></div>';
+      }).join('');
+
+      // Cumulative radiation dose
+      const radEl = document.getElementById('rad-dose');
+      if (radEl) {
+        const doseCol = cumulativeRadiation > 500 ? 'var(--status-critical)' : cumulativeRadiation > 250 ? 'var(--status-warning)' : 'var(--status-nominal)';
+        radEl.textContent = cumulativeRadiation.toFixed(1) + ' µSv';
+        radEl.style.color = doseCol;
+      }
     }
 
     // =========================================================================
@@ -1345,6 +1609,9 @@
       renderBig();
       renderStatus();
       renderHealthPanel();
+      renderEmergency();
+      updateCumulativeRadiation();
+      computeDCsrisk();
     }
     setInterval(renderAll, 200);
 
@@ -1393,6 +1660,9 @@
       lines.push('Mission Phase: ' + PHASES[missionPhase].name);
       lines.push('Composite Health Score: ' + (g.score === null ? 'NO DATA' : g.score + ' / 100 (' + gradeLabel(g.score).t + ')'));
       lines.push('Valid Channels: ' + g.nValid);
+      lines.push('DCS Risk: ' + dcsRiskCache.score + '/100 — ' + dcsRiskCache.level);
+      lines.push('Cumulative Radiation: ' + cumulativeRadiation.toFixed(1) + ' µSv');
+      lines.push('EVA Duration: ' + (evaStartTs ? ((Date.now() - evaStartTs) / 3600000).toFixed(2) + ' h' : 'N/A'));
       lines.push('');
       lines.push('Channel Readings:');
       Object.keys(CH).forEach(k => {
@@ -1402,6 +1672,9 @@
       lines.push('');
       lines.push('Guidance / Treatment Recommendations:');
       buildGuidance().forEach(r => lines.push('  - ' + r.replace(/<b[^>]*>(.*?)<\/b>/, '$1').replace(/<[^>]+>/g, '')));
+      lines.push('');
+      lines.push('Countermeasures:');
+      computeCountermeasures().forEach(c => lines.push('  - ' + c));
       lines.push('');
       lines.push('NASA Research References (Spaceline #1224, Nov 13 2026):');
       lines.push('  - Immune Biomarkers: nasa.gov/reference/immune-biomarkers/');
@@ -1483,6 +1756,7 @@
       else if (camera.view && camera.view.enabled) camera.clearViewOffset();
       renderer.render(scene, camera);
     }
+    openIDB();
     animate();
     setBle('IDLE');
 
