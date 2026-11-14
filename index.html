@@ -711,7 +711,7 @@
         const r = REGIONS.find(x => x.id === rId), st = regionStatus(r);
         probe.position.copy(grp.userData.centroid).add(grp.position);
         probe.position.z += 0.04;
-        probe.scale.setScalar(st === 'nodata' ? 1 : 1 + Math.sin(elapsed * 5) * 0.18);
+        probe.scale.setScalar(st === 'idle' ? 1 : 1 + Math.sin(elapsed * 5) * 0.18);
         probe.material.color.setHex(selectedRegionId === rId ? 0x1d70f5 : PROBE_COL[st]);
       });
     }
@@ -738,15 +738,29 @@
     let internalHeartMesh = null;
     let internalLungsGroup = null;
 
+    // Classify a triangle centroid into one of the 11 suit regions.
+    // nx, nz are normalized to [-1, 1] (left/right, front/back), ny is [0, 1] (bottom→top).
+    // Boundaries are tuned for the EVA suit proportions so hands, legs, arms
+    // and torso split cleanly instead of bleeding into each other.
     function classifyVertexRegion(nx, ny, nz) {
-      if (ny > 0.77) return 'head';
-      if (ny < 0.43) { return nx >= 0 ? 'left_leg' : 'right_leg'; }
-      if (ny >= 0.43 && ny < 0.53 && Math.abs(nx) < 0.24) { return 'pelvis'; }
-      if (Math.abs(nx) >= 0.21) {
-        if (ny < 0.58 || Math.abs(nx) > 0.34) { return nx >= 0 ? 'left_wrist' : 'right_wrist'; }
+      // Head / helmet: top cap of the suit.
+      if (ny > 0.76) return 'head';
+      // Legs: bottom region, cleanly split left/right.
+      if (ny < 0.38) { return nx >= 0 ? 'left_leg' : 'right_leg'; }
+      // Pelvis / waist: central band around the middle, near the body centerline.
+      if (ny >= 0.38 && ny < 0.48 && Math.abs(nx) < 0.32) { return 'pelvis'; }
+      // Arms / hands: side regions of the upper body.
+      if (Math.abs(nx) >= 0.40) {
+        // Hand / wrist: distal extremity — farthest out on the X axis, or
+        // lower down where the arm tapers into the hand.
+        if (ny < 0.50 || Math.abs(nx) > 0.62) {
+          return nx >= 0 ? 'left_wrist' : 'right_wrist';
+        }
         return nx >= 0 ? 'left_arm' : 'right_arm';
       }
-      if (nz >= 0.02) { return 'chest'; }
+      // Chest: front of the upper torso.
+      if (ny >= 0.48 && ny < 0.72 && nz > 0.10) { return 'chest'; }
+      // Torso: everything else (back / PLSS pack / mid-section).
       return 'torso';
     }
 
@@ -775,6 +789,11 @@
       rawBox.getSize(rawSize); rawBox.getCenter(rawCenter);
       const targetHeight = 2.0;
       const scaleFactor = targetHeight / (rawSize.y || 1);
+      // Normalization factors so classification is scale-invariant.
+      // After the (pos - rawCenter) * sf transform the model sits at origin,
+      // height = targetHeight, X and Z ranges are rawSize.x/z * scaleFactor.
+      const maxAbsX = (rawSize.x * scaleFactor) / 2;
+      const maxAbsZ = (rawSize.z * scaleFactor) / 2;
 
       REGIONS.forEach(r => {
         const g = new THREE.Group();
@@ -818,8 +837,11 @@
           const cx = (posArray[base] + posArray[base + 3] + posArray[base + 6]) / 3;
           const cy = (posArray[base + 1] + posArray[base + 4] + posArray[base + 7]) / 3;
           const cz = (posArray[base + 2] + posArray[base + 5] + posArray[base + 8]) / 3;
+          // Normalized coordinates: nx/nz in [-1,1], ny in [0,1] (bottom→top)
+          const nx = maxAbsX > 0 ? cx / maxAbsX : 0;
           const ny = (cy + targetHeight / 2) / targetHeight;
-          const b = buckets[classifyVertexRegion(cx, ny, cz)];
+          const nz = maxAbsZ > 0 ? cz / maxAbsZ : 0;
+          const b = buckets[classifyVertexRegion(nx, ny, nz)];
           for (let k = 0; k < 3; k++) {
             const o = base + k * 3;
             b.pos.push(posArray[o], posArray[o + 1], posArray[o + 2]);
@@ -880,11 +902,11 @@
     function loadDefaultAstronaut() {
       loaderBar.style.opacity = '1'; loaderBar.style.width = '35%';
       gltfLoader.load(
-        'assets/Astronaut.glb',
+        'assets/detailed-astronaut.glb',
         (gltf) => {
           loaderBar.style.width = '100%';
           setTimeout(() => { loaderBar.style.opacity = '0'; }, 350);
-          buildSlicedAstronautFromGLTF(gltf.scene, 'Astronaut.glb • 2.00m');
+          buildSlicedAstronautFromGLTF(gltf.scene, 'detailed-astronaut.glb • 2.00m');
         },
         (xhr) => { if (xhr.total) loaderBar.style.width = `${Math.min(95, Math.round((xhr.loaded / xhr.total) * 100))}%`; },
         (err) => {
