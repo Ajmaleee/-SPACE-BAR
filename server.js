@@ -1,15 +1,25 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const root = 'C:\\Users\\Ajmaleee Hackathon\\Desktop\\space';
-const mime = { '.html': 'text/html', '.js': 'application/javascript', '.glb': 'model/gltf-binary', '.css': 'text/css' };
+
+const root = __dirname;   // serves the folder this file lives in (no hardcoded Windows path)
+const mime = {
+  '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css',
+  '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon'
+};
+
 const server = http.createServer((req, res) => {
-  let filePath = path.join(root, req.url === '/' ? 'index.html' : req.url);
-  const ext = path.extname(filePath).toLowerCase();
-  const type = mime[ext] || 'application/octet-stream';
+  let urlPath;
+  try { urlPath = decodeURIComponent(req.url.split('?')[0]); } catch (e) { res.writeHead(400); return res.end('Bad request'); }
+  const filePath = path.join(root, urlPath === '/' ? 'index.html' : urlPath);
+  if (!filePath.startsWith(root)) { res.writeHead(403); return res.end('Forbidden'); }   // block ../ traversal
   fs.readFile(filePath, (err, content) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': type, 'Access-Control-Allow-Origin': '*' });
+    if (err) { res.writeHead(404); return res.end('Not found'); }
+    res.writeHead(200, {
+      'Content-Type': mime[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      'Access-Control-Allow-Origin': '*'
+    });
     res.end(content);
   });
 });

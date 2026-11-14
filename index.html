@@ -635,7 +635,7 @@
       let note = 'DCS risk nominal';
 
       if (missionPhase !== 'eva') {
-        dcsRiskCache = { level: 'nominal', score: 0, note: 'Not in EVA' };
+        dcsRiskCache = { level: 'nominal', score: 0, note: 'Not in EVA' }; evaStartTs = null;
         return;
       }
 
@@ -654,7 +654,7 @@
       // Low O2 percentage increases risk (less pre-breathe washout)
       if (o2 !== null && o2 < 95) score += 15;
 
-      if (score >= 60) { level = 'critical'; note = 'HIGH DCS RISK — abort EVA, repressurize immediately'; }
+      if (score >= 60) { level = 'crit'; note = 'HIGH DCS RISK — abort EVA, repressurize immediately'; }
       else if (score >= 30) { level = 'warn'; note = 'Elevated DCS risk — consider pre-breathe O2'; }
       else { note = 'DCS risk low'; }
 
@@ -1435,11 +1435,14 @@
       });
 
       // DCS risk bar (EVA-specific)
-      const dcsWrap = document.createElement('div');
+      let dcsWrap = document.getElementById('dcs-wrap');
+      if (!dcsWrap) {
+      dcsWrap = document.createElement('div'); dcsWrap.id = 'dcs-wrap';
       dcsWrap.className = 'spark-wrap';
       dcsWrap.style.marginTop = '4px';
       dcsWrap.innerHTML = '<div class="spark-name"><span>DCS RISK (EVA)</span><span id="dcs-score" style="font-family:JetBrains Mono,monospace;font-size:9px">--</span></div><canvas class="spark" id="dcs-canvas" width="300" height="12"></canvas>';
-      chips.parentNode.insertBefore(dcsWrap, chips.parentNode.children[chips.parentNode.children.length - 1]);
+      chips.insertAdjacentElement('afterend', dcsWrap);
+      }
 
       const dcsCanvas = document.getElementById('dcs-canvas');
       const dcsCtx = dcsCanvas.getContext('2d');
@@ -1766,5 +1769,6 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
   </script>
+  <script src="ai-flight-surgeon.js"></script>
 </body>
 </html>
