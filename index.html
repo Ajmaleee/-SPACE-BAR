@@ -1091,7 +1091,11 @@
         },
         (xhr) => { if (xhr.total) loaderBar.style.width = `${Math.min(95, Math.round((xhr.loaded / xhr.total) * 100))}%`; },
         (err) => {
-          console.warn('Remote GLB unreachable, building procedural fallback astronaut:', err);
+          console.error('GLB LOAD ERROR:', err);
+          const toast = document.getElementById('toast');
+          toast.textContent = 'MODEL LOAD FAILED: ' + (err && err.message ? err.message : err);
+          toast.style.borderColor = '#ef4444'; toast.style.color = '#fca5a5'; toast.style.display = 'block';
+          setTimeout(() => { toast.style.display = 'none'; }, 10000);
           loaderBar.style.opacity = '0';
           buildProceduralAstronautFallback();
         }
