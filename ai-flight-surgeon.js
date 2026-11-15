@@ -8,7 +8,7 @@
    ========================================================================= */
 (() => {
   const API = 'https://api.groq.com/openai/v1/chat/completions';
-  const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']; // gemma2-9b-it was retired by Groq
+  const MODELS = ['qwen/qwen3.8-27b', 'openai/gpt-oss-20b']; // llama-3.1-8b-instant / llama-3.3-70b-versatile are retired or not accessible on this key
   const key = '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';
   let autoOn = true, speakOn = false, busy = false, lastAuto = 0, lastSig = '';
   const chat = [];
@@ -121,7 +121,8 @@ If one body/suit area is most relevant, end with exactly one tag [[part:ID]] whe
         let d = ''; try { d = (await r.json()).error.message; } catch (e) {}
         throw new Error('Groq error ' + r.status + (d ? ': ' + d : ''));
       }
-      let out = (await r.json()).choices[0].message.content.trim();
+      const data = await r.json();
+      let out = (data.choices[0].message.content || data.choices[0].message.reasoning || '').trim();
       const m = out.match(/\[\[part:(\w+)\]\]/);
       out = out.replace(/\[\[part:\w+\]\]/g, '').trim();
       chat.push({ role: 'user', content: text }, { role: 'assistant', content: out });
