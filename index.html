@@ -1040,7 +1040,16 @@
           else subGeo.computeVertexNormals();
           if (b.uv.length > 0) subGeo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
           const baseMat = child.material ? child.material.clone() : new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.15 });
-          baseMat.transparent = true; baseMat.opacity = 1.0;
+          baseMat.transparent = false; baseMat.opacity = 1.0; baseMat.depthWrite = true;
+          // boost colour saturation so the suit looks vivid, not washed out
+          if (baseMat.color) {
+            const hsl = {};
+            baseMat.color.getHSL(hsl);
+            hsl.s = Math.min(1, hsl.s * 1.7 + 0.15);
+            hsl.l = Math.min(1, hsl.l * 1.08);
+            baseMat.color.setHSL(hsl.h, hsl.s, hsl.l);
+          }
+          if (baseMat.emissive) baseMat.emissive.multiplyScalar(1.25);
           const subMesh = new THREE.Mesh(subGeo, baseMat);
           subMesh.castShadow = true; subMesh.receiveShadow = true;
           subMesh.userData = { regionId: r.id, origMat: baseMat.clone() };
@@ -1182,7 +1191,7 @@
         } else {
           ghost.visible = false;
           gsap.to(grp.position, { x: 0, y: 0, z: 0, duration: 0.65, ease: 'power3.out' });
-          setGroupOpacity(grp, 0.25);
+          setGroupOpacity(grp, 1.0);
         }
       });
       shiftView(true);
@@ -1246,7 +1255,18 @@
 
     function setGroupOpacity(group, opacity) {
       group.traverse(c => {
-        if (c.isMesh && c.material) { c.material.transparent = true; gsap.to(c.material, { opacity: opacity, duration: 0.35 }); }
+        if (c.isMesh && c.material) {
+          const m = c.material;
+          if (opacity >= 1.0) {
+            m.transparent = false;
+            m.depthWrite = true;
+            m.opacity = 1.0;
+          } else {
+            m.transparent = true;
+            m.depthWrite = false;
+            gsap.to(m, { opacity: opacity, duration: 0.35 });
+          }
+        }
       });
     }
 
