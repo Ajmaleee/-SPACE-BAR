@@ -1083,7 +1083,7 @@
     function loadDefaultAstronaut() {
       loaderBar.style.opacity = '1'; loaderBar.style.width = '35%';
       gltfLoader.load(
-        'assets/detailed-astronaut-compressed.glb',
+        '/assets/detailed-astronaut-compressed.glb',
         (gltf) => {
           loaderBar.style.width = '100%';
           setTimeout(() => { loaderBar.style.opacity = '0'; }, 350);
