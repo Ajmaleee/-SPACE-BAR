@@ -1083,11 +1083,11 @@
     function loadDefaultAstronaut() {
       loaderBar.style.opacity = '1'; loaderBar.style.width = '35%';
       gltfLoader.load(
-        'assets/detailed-astronaut.glb',
+        'assets/detailed-astronaut-compressed.glb',
         (gltf) => {
           loaderBar.style.width = '100%';
           setTimeout(() => { loaderBar.style.opacity = '0'; }, 350);
-          buildSlicedAstronautFromGLTF(gltf.scene, 'detailed-astronaut.glb • 2.00m');
+          buildSlicedAstronautFromGLTF(gltf.scene, 'detailed-astronaut-compressed.glb • 2.00m');
         },
         (xhr) => { if (xhr.total) loaderBar.style.width = `${Math.min(95, Math.round((xhr.loaded / xhr.total) * 100))}%`; },
         (err) => {
